@@ -104,6 +104,17 @@ function hb_required_plugins_install(string $slug)
         return new WP_Error('hb_forbidden', 'プラグインを導入する権限がありません。');
     }
 
+    return hb_required_plugins_install_now($slug);
+}
+
+/**
+ * 権限を見ずに導入する。裏で動かすとき（cron）はログイン中の人が居ないため。
+ * 画面から呼ぶときは必ず hb_required_plugins_install() を通すこと。
+ *
+ * @return true|WP_Error
+ */
+function hb_required_plugins_install_now(string $slug)
+{
     $status = hb_required_plugins_status();
 
     if (!isset($status[$slug])) {
@@ -213,6 +224,9 @@ function hb_required_plugins_init(): void
 {
     // 停止の記録は管理画面に限らない。WP-CLI から止めることもある。
     add_action('deactivated_plugin', 'hb_required_plugins_remember_optout', 10, 1);
+
+    // 自動ダウンロード。cron から動くので表示側でも登録する。
+    hb_required_plugins_auto_install_init();
 
     if (!is_admin()) {
         return;
@@ -329,4 +343,157 @@ function hb_required_plugins_lock_links(array $links, string $plugin): array
     $links['hb-locked'] = '<span style="color:#646970">サイトの標準構成</span>';
 
     return $links;
+}
+
+/* ---------------------------------------------------------------------------
+ * 自動ダウンロード
+ *
+ * 8本を1リクエストで落とすと実行時間の上限に当たるので、裏で1本ずつ入れる。
+ * 管理画面を開いた時点で予約を入れ、cron が1本ずつ処理して、
+ * 残りがあれば自分で次を予約する。
+ * -------------------------------------------------------------------------*/
+
+const HB_INSTALL_HOOK  = 'hb_install_required_plugin';
+const HB_INSTALL_FAILS = 'hb_plugin_install_fails';
+const HB_INSTALL_LIMIT = 3;   // 同じプラグインで続けて失敗したら諦める回数
+
+function hb_required_plugins_auto_install_init(): void
+{
+    add_action(HB_INSTALL_HOOK, 'hb_required_plugins_install_next');
+
+    if (!is_admin() || !hb_base_const('HB_AUTO_INSTALL', true)) {
+        return;
+    }
+
+    add_action('admin_init', 'hb_required_plugins_schedule', 6);
+    add_action('admin_notices', 'hb_required_plugins_progress_notice');
+}
+
+/** 足りないものがあれば、裏での導入を予約する。 */
+function hb_required_plugins_schedule(): void
+{
+    if (wp_next_scheduled(HB_INSTALL_HOOK)) {
+        return;
+    }
+
+    if (hb_required_plugins_pending() === []) {
+        return;
+    }
+
+    // すぐ後ろに置く。管理画面の次の読み込みか、サイトへのアクセスで動く。
+    wp_schedule_single_event(time() + 10, HB_INSTALL_HOOK);
+}
+
+/**
+ * まだ入っていなくて、諦めてもいないものの一覧。
+ *
+ * @return string[]
+ */
+function hb_required_plugins_pending(): array
+{
+    $optout = hb_required_plugins_optout();
+    $fails  = hb_required_plugins_fails();
+    $out    = [];
+
+    foreach (hb_required_plugins_status() as $slug => $info) {
+        if ($info['state'] !== 'missing') {
+            continue;
+        }
+        if (in_array($slug, $optout, true)) {
+            continue;
+        }
+        if (($fails[$slug] ?? 0) >= HB_INSTALL_LIMIT) {
+            continue;
+        }
+
+        $out[] = $slug;
+    }
+
+    return $out;
+}
+
+function hb_required_plugins_fails(): array
+{
+    $fails = get_option(HB_INSTALL_FAILS, []);
+
+    return is_array($fails) ? $fails : [];
+}
+
+/** cron から呼ばれる。1本だけ入れて、残りがあれば次を予約する。 */
+function hb_required_plugins_install_next(): void
+{
+    $pending = hb_required_plugins_pending();
+
+    if ($pending === []) {
+        return;
+    }
+
+    $slug   = $pending[0];
+    $result = hb_required_plugins_install_now($slug);
+
+    $fails = hb_required_plugins_fails();
+
+    if (is_wp_error($result)) {
+        $fails[$slug] = ($fails[$slug] ?? 0) + 1;
+        $fails['_last_error'] = $slug . ': ' . $result->get_error_message();
+    } else {
+        unset($fails[$slug]);
+    }
+
+    update_option(HB_INSTALL_FAILS, $fails, false);
+
+    if (hb_required_plugins_pending() !== []) {
+        wp_schedule_single_event(time() + 10, HB_INSTALL_HOOK);
+
+        return;
+    }
+
+    // 全部そろったら予約を片付ける。空振りの予定を残さない。
+    $next = wp_next_scheduled(HB_INSTALL_HOOK);
+
+    if ($next) {
+        wp_unschedule_event($next, HB_INSTALL_HOOK);
+    }
+}
+
+/** 導入中・導入できなかったことを管理画面に出す。黙って進むと不安になるため。 */
+function hb_required_plugins_progress_notice(): void
+{
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+
+    $pending = hb_required_plugins_pending();
+
+    if (!empty($pending)) {
+        printf(
+            '<div class="notice notice-info"><p>標準プラグインを裏で導入しています（残り %d 本）。'
+            . 'しばらくしてから画面を再読み込みしてください。</p></div>',
+            count($pending)
+        );
+
+        return;
+    }
+
+    $fails = hb_required_plugins_fails();
+    $stuck = [];
+
+    foreach ($fails as $slug => $count) {
+        if ($slug !== '_last_error' && (int) $count >= HB_INSTALL_LIMIT) {
+            $stuck[] = $slug;
+        }
+    }
+
+    if (empty($stuck)) {
+        return;
+    }
+
+    printf(
+        '<div class="notice notice-warning"><p>標準プラグインを導入できませんでした: <code>%s</code><br>'
+        . '<small>%s</small><br>'
+        . '<a href="%s">HBベースの画面</a>から手動で導入するか、サーバーの書き込み権限を確認してください。</p></div>',
+        esc_html(implode(', ', $stuck)),
+        esc_html((string) ($fails['_last_error'] ?? '')),
+        esc_url(admin_url('options-general.php?page=hb-base'))
+    );
 }
