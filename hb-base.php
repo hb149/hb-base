@@ -96,11 +96,15 @@ function hb_base_boot(): void
     if (hb_base_module_enabled('limit_login')) {
         hb_limit_login_init();
     }
+    if (hb_base_module_enabled('required_plugins')) {
+        hb_required_plugins_init();
+    }
     if (is_admin()) {
         hb_admin_screen_init();
 
         if (hb_base_module_enabled('admin_notices')) {
             hb_admin_notices_init();
         }
+
     }
 }

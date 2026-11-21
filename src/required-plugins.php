@@ -38,8 +38,14 @@ function hb_required_plugins(): array
 
     if ($slugs === null) {
         $slugs = [
-            'limit-login-attempts-reloaded', // hb-base が初期設定を投入する
-            'secure-passkeys',               // hb-base が日本語化と見出し補修を行う
+            'limit-login-attempts-reloaded', // ログイン試行の制限。hb-base が初期設定を投入する
+            'secure-passkeys',               // パスキー。hb-base が日本語化と見出し補修を行う
+            'public-post-preview',           // 未公開記事をクライアントに見せる
+            'safe-svg',                      // SVGアップロードの無害化
+            'seo-simple-pack',               // タイトル・説明・OGP
+            'snow-monkey-forms',             // 問い合わせフォーム
+            'duplicate-post',                // 記事の複製
+            'crop-thumbnails',               // サムネイルの切り抜き位置を手で決める
         ];
     }
 
@@ -195,4 +201,132 @@ function hb_required_plugins_install_all(): array
     }
 
     return ['ok' => $ok, 'failed' => $failed];
+}
+
+/* ---------------------------------------------------------------------------
+ * 自動有効化と、停止させない仕掛け
+ * -------------------------------------------------------------------------*/
+
+const HB_PLUGIN_OPTOUT = 'hb_plugin_optout';
+
+function hb_required_plugins_init(): void
+{
+    // 停止の記録は管理画面に限らない。WP-CLI から止めることもある。
+    add_action('deactivated_plugin', 'hb_required_plugins_remember_optout', 10, 1);
+
+    if (!is_admin()) {
+        return;
+    }
+
+    if (hb_base_const('HB_FORCE_ACTIVATE', true)) {
+        add_action('admin_init', 'hb_required_plugins_autoactivate', 5);
+    }
+
+    // クライアントが誤って止めないよう「停止」リンクを隠す。保守担当には見せる。
+    add_filter('plugin_action_links', 'hb_required_plugins_lock_links', 10, 2);
+}
+
+/**
+ * 入っているのに停止しているものを有効化する。
+ *
+ * ダウンロードはしない。ここで通信すると管理画面が重くなるし、
+ * 失敗したときに原因が分かりにくい。未導入のものは画面のボタンから入れる。
+ */
+function hb_required_plugins_autoactivate(): void
+{
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+
+    $optout = hb_required_plugins_optout();
+
+    foreach (hb_required_plugins_status() as $slug => $info) {
+        if ($info['state'] !== 'inactive' || in_array($slug, $optout, true)) {
+            continue;
+        }
+
+        activate_plugin($info['file']);
+    }
+}
+
+/** 自動有効化の対象から外したものの一覧。 */
+function hb_required_plugins_optout(): array
+{
+    $list = get_option(HB_PLUGIN_OPTOUT, []);
+
+    return is_array($list) ? $list : [];
+}
+
+/**
+ * 保守担当が止めたときだけ、そのプラグインを以後ほうっておく。
+ * そうしないと、止めた直後に自動で戻って止められなくなる。
+ *
+ * 逆に、保守担当以外が止めた場合は覚えない。
+ * 一覧の「停止」リンクは隠してあるが、一括操作からは止められてしまうので、
+ * そちらは次に管理画面を開いた時点で有効に戻る。
+ *
+ * WP-CLI はサーバーを触れる立場なので保守担当として扱う。
+ */
+function hb_required_plugins_remember_optout(string $plugin): void
+{
+    $by_maintainer = (defined('WP_CLI') && WP_CLI) || hb_is_maintainer();
+
+    if (!$by_maintainer) {
+        return;
+    }
+
+    $slug = dirname($plugin);
+
+    if ($slug === '.' ) {
+        $slug = basename($plugin, '.php');
+    }
+
+    if (!in_array($slug, hb_required_plugins(), true)) {
+        return;
+    }
+
+    $list = hb_required_plugins_optout();
+
+    if (!in_array($slug, $list, true)) {
+        $list[] = $slug;
+        update_option(HB_PLUGIN_OPTOUT, $list, false);
+    }
+}
+
+/** 自動有効化の対象に戻す。 */
+function hb_required_plugins_clear_optout(string $slug): void
+{
+    update_option(
+        HB_PLUGIN_OPTOUT,
+        array_values(array_diff(hb_required_plugins_optout(), [$slug])),
+        false
+    );
+}
+
+/**
+ * 標準プラグインの「停止」リンクを隠す。
+ *
+ * 権限は変えない。リンクを出さないだけなので、保守担当やWP-CLIからは普通に止められる。
+ */
+function hb_required_plugins_lock_links(array $links, string $plugin): array
+{
+    if (!hb_base_const('HB_LOCK_REQUIRED_PLUGINS', true)) {
+        return $links;
+    }
+
+    if (hb_is_maintainer()) {
+        return $links;
+    }
+
+    $slug = dirname($plugin);
+
+    if (!in_array($slug, hb_required_plugins(), true)) {
+        return $links;
+    }
+
+    unset($links['deactivate']);
+
+    $links['hb-locked'] = '<span style="color:#646970">サイトの標準構成</span>';
+
+    return $links;
 }

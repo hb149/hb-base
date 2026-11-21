@@ -106,8 +106,10 @@ define('HB_LLAR_MANAGE', false);       // 初期値の投入ごと止める
 
 /* ---- 標準プラグイン ---- */
 
-// WordPress.org のスラッグを並べる。既定は hb-base が連携する2本
+// WordPress.org のスラッグを並べる。既定は下記の8本
 define('HB_REQUIRED_PLUGINS', 'limit-login-attempts-reloaded, secure-passkeys, safe-svg');
+define('HB_FORCE_ACTIVATE', false);        // 自動有効化をやめる
+define('HB_LOCK_REQUIRED_PLUGINS', false); // 「停止」リンクを隠さない
 
 /* ---- 管理画面の宣伝パネル ---- */
 
@@ -247,12 +249,31 @@ secure, dashboard, backend, panel, cms, manage）と、クライアントのペ�
 ## 標準プラグインのまとめ導入
 
 設定 → HBベース に一覧と導入ボタンが出る。WordPress.org から取得して有効化まで行う。
-既定は hb-base が実際に連携している2本だけ。
 
 | | |
 |---|---|
-| `limit-login-attempts-reloaded` | hb-base が初期設定を投入する |
-| `secure-passkeys` | hb-base が日本語化と見出し補修を行う |
+| `limit-login-attempts-reloaded` | ログイン試行の制限。hb-base が初期設定を投入する |
+| `secure-passkeys` | パスキー。hb-base が日本語化と見出し補修を行う |
+| `public-post-preview` | 未公開記事をクライアントに見せる |
+| `safe-svg` | SVGアップロードの無害化 |
+| `seo-simple-pack` | タイトル・説明・OGP |
+| `snow-monkey-forms` | 問い合わせフォーム |
+| `duplicate-post` | 記事の複製 |
+| `crop-thumbnails` | サムネイルの切り抜き位置を手で決める |
+
+### 自動有効化
+
+入っているのに停止しているものは、管理画面を開いたときに自動で有効化する。
+ダウンロードはしない（通信で管理画面が重くなるため）。未導入のものはボタンから入れる。
+
+一覧のプラグインは、クライアントには**「停止」リンクを出さない**。
+権限は変えていないので、保守担当（`HB_MAINTAINERS`）には従来どおり出る。
+
+**保守担当が止めた場合はその判断を覚えて、自動有効化の対象から外す**
+（止めた直後に戻って止められなくなるのを防ぐため）。WP-CLI からの停止も同じ扱い。
+戻すときは HBベース の画面から「自動有効化に戻す」。
+
+逆に、保守担当以外が一括操作などで止めた場合は覚えない。次に管理画面を開いた時点で有効に戻る。
 
 **必須依存にはしていない。** WordPress 6.5 以降は `Requires Plugins:` ヘッダで
 依存を宣言できるが、**依存が揃っていないと hb-base 自体が有効化できなくなる**。

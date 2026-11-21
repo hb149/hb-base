@@ -140,6 +140,14 @@ function hb_admin_screen_handle_actions(): void
             }
             break;
 
+        case 'restore-plugin':
+            $slug = isset($_POST['hb_slug']) ? sanitize_key(wp_unslash($_POST['hb_slug'])) : '';
+            if ($slug !== '') {
+                hb_required_plugins_clear_optout($slug);
+                $notice = 'plugin-restored';
+            }
+            break;
+
         case 'clear-log':
             delete_option(HB_GUARD_LOG_OPTION);
             $notice = 'log-cleared';
@@ -250,6 +258,7 @@ function hb_admin_screen_notice(): void
         'invite-created'  => '招待リンクを発行しました。下のURLを本人に渡してください。',
         'log-cleared'     => '記録を消去しました。',
         'plugin-installed' => 'プラグインを導入しました。',
+        'plugin-restored'  => '自動有効化の対象に戻しました。次に管理画面を開いたときに有効化されます。',
     ];
 
     $key = sanitize_key((string) wp_unslash($_GET['hb_notice']));
@@ -284,36 +293,38 @@ function hb_admin_screen_plugins(): void
     }
 
     $status  = hb_required_plugins_status();
-    $missing = array_filter($status, static function ($info) { return $info['state'] !== 'active'; });
+    $optout  = hb_required_plugins_optout();
+    $missing = array_filter($status, static function ($info) { return $info['state'] === 'missing'; });
 
     echo '<h2>標準プラグイン</h2>';
     echo '<p class="description">案件ごとに手で入れて回らなくて済むよう、ここからまとめて導入できます。'
+        . '入っているのに停止しているものは自動で有効化し、クライアントには「停止」リンクを出しません。<br>'
         . '入っていなくても hb-base は動きます（相手が居なければ連携部分が黙るだけ）。</p>';
 
     echo '<table class="widefat striped" style="max-width:52rem"><tbody>';
 
     foreach ($status as $slug => $info) {
+        $excluded = in_array($slug, $optout, true);
+
         $labels = [
             'active'   => '<span style="color:#008a20">有効</span>',
-            'inactive' => '<span style="color:#996800">停止中</span>',
+            'inactive' => $excluded
+                ? '<span style="color:#646970">停止中（自動有効化の対象外）</span>'
+                : '<span style="color:#996800">停止中</span>',
             'missing'  => '<span style="color:#b32d2e">未導入</span>',
         ];
 
         echo '<tr>';
         printf('<td style="width:20rem">%s<br><code>%s</code></td>', esc_html($info['name']), esc_html($slug));
-        printf('<td style="width:6rem">%s</td>', $labels[$info['state']]);
+        printf('<td style="width:12rem">%s</td>', $labels[$info['state']]);
         echo '<td>';
 
-        if ($info['state'] !== 'active') {
-            echo '<form method="post" style="display:inline">';
-            wp_nonce_field('hb_base_action');
-            echo '<input type="hidden" name="hb_action" value="install-plugin">';
-            printf('<input type="hidden" name="hb_slug" value="%s">', esc_attr($slug));
-            printf(
-                '<button type="submit" class="button">%s</button>',
-                $info['state'] === 'inactive' ? '有効化' : 'インストールして有効化'
-            );
-            echo '</form>';
+        if ($info['state'] === 'missing') {
+            hb_admin_screen_plugin_button('install-plugin', $slug, 'インストールして有効化');
+        } elseif ($excluded) {
+            hb_admin_screen_plugin_button('restore-plugin', $slug, '自動有効化に戻す');
+        } elseif ($info['state'] === 'inactive') {
+            hb_admin_screen_plugin_button('install-plugin', $slug, '有効化');
         }
 
         echo '</td></tr>';
@@ -417,6 +428,17 @@ function hb_admin_screen_action_button(string $action, string $id): void
     printf('<input type="hidden" name="hb_action" value="%s">', esc_attr($action));
     printf('<input type="hidden" name="hb_id" value="%s">', esc_attr($id));
     printf('<button type="submit" class="button %s">%s</button>', esc_attr($class), esc_html($label));
+    echo '</form>';
+}
+
+/** 標準プラグインの行に出すボタン。 */
+function hb_admin_screen_plugin_button(string $action, string $slug, string $label): void
+{
+    echo '<form method="post" style="display:inline">';
+    wp_nonce_field('hb_base_action');
+    printf('<input type="hidden" name="hb_action" value="%s">', esc_attr($action));
+    printf('<input type="hidden" name="hb_slug" value="%s">', esc_attr($slug));
+    printf('<button type="submit" class="button">%s</button>', esc_html($label));
     echo '</form>';
 }
 
