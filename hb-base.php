@@ -44,6 +44,7 @@ require_once __DIR__ . '/src/login-url.php';
 require_once __DIR__ . '/src/login-ui.php';
 require_once __DIR__ . '/src/limit-login.php';
 require_once __DIR__ . '/src/admin-notices.php';
+require_once __DIR__ . '/src/required-plugins.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';

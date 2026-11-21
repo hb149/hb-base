@@ -6,6 +6,7 @@ WordPress案件で共通して使う土台。1つのリポジトリを直せば�
 - **ログイン画面の整形** — 並びと幅だけ整える（色と角丸は WordPress の既定のまま）
 - **パスキーの日本語化** — Secure Passkeys の画面文言を日本語にする
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
+- **標準プラグインのまとめ導入** — 案件ごとに手で入れて回らない
 - **宣伝パネルの抑制** — 「購読してください」「レビューを書いてください」を出さない
 - **管理画面のアクセス制限** — 固定IPと、管理者が許可した端末だけを通す
 
@@ -102,6 +103,11 @@ define('HB_LOGIN_STYLE',  false);      // 整形ごと止める
 // 初期値を変えたいキーだけ書く（初回投入より前に）
 define('HB_LLAR_SETTINGS', ['allowed_retries' => 3, 'lockout_duration' => 1800]);
 define('HB_LLAR_MANAGE', false);       // 初期値の投入ごと止める
+
+/* ---- 標準プラグイン ---- */
+
+// WordPress.org のスラッグを並べる。既定は hb-base が連携する2本
+define('HB_REQUIRED_PLUGINS', 'limit-login-attempts-reloaded, secure-passkeys, safe-svg');
 
 /* ---- 管理画面の宣伝パネル ---- */
 
@@ -238,6 +244,30 @@ secure, dashboard, backend, panel, cms, manage）と、クライアントのペ�
 
 ---
 
+## 標準プラグインのまとめ導入
+
+設定 → HBベース に一覧と導入ボタンが出る。WordPress.org から取得して有効化まで行う。
+既定は hb-base が実際に連携している2本だけ。
+
+| | |
+|---|---|
+| `limit-login-attempts-reloaded` | hb-base が初期設定を投入する |
+| `secure-passkeys` | hb-base が日本語化と見出し補修を行う |
+
+**必須依存にはしていない。** WordPress 6.5 以降は `Requires Plugins:` ヘッダで
+依存を宣言できるが、**依存が揃っていないと hb-base 自体が有効化できなくなる**。
+hb-base は管理画面ガードやログインURLを担う土台なので、
+「別のプラグインが無いから土台ごと止まる」のは本末転倒になる。
+
+そのため依存にはせず、相手が居なければ各モジュールが黙って何もしない作りにしてある。
+導入するかどうかはこの画面で選ぶ。
+
+ACF PRO のような有料プラグインは WordPress.org に無いので扱えない。
+サーバーが WordPress からの直接書き込みを許していない場合（FTP資格情報を求める構成）も
+導入できないので、その旨を表示して手動導入を案内する。
+
+---
+
 ## 宣伝パネルの抑制
 
 プラグインを入れるたびに出る「インストールに成功しました！ニュースレターを購読」
@@ -336,6 +366,7 @@ src/login-url.php    ログインURLの差し替え
 src/login-ui.php     ログイン画面の整形
 src/limit-login.php  Limit Login Attempts の初期設定
 src/admin-notices.php 宣伝パネルの抑制
+src/required-plugins.php 標準プラグインのまとめ導入
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面

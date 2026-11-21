@@ -17,9 +17,13 @@
  *   プラグインの不具合通知、こちらが出している通知。
  *   関数名で判断しているので、本体の通知に巻き添えが出ない。
  *
+ * ダッシュボードの「WordPress へようこそ！」も同じ理由で消す。
+ * 納品後のクライアントには用の無い案内で、毎回「非表示」を押させることになる。
+ *
  * ■ 設定
  *   define('HB_HIDE_PROMO_NOTICES', false);                  // 丸ごと止める
  *   define('HB_PROMO_NOTICE_WORDS', 'review, newsletter');   // 判断する語を差し替える
+ *   define('HB_HIDE_WELCOME_PANEL', false);                  // ようこそパネルは残す
  */
 
 if (!defined('ABSPATH')) {
@@ -39,6 +43,24 @@ function hb_admin_notices_init(): void
     // 通知が出力されるより前に外す。
     // admin_notices の中で外そうとすると、WordPressがすでに回し始めているので間に合わない。
     add_action('in_admin_header', 'hb_admin_notices_strip', 1);
+
+    if (hb_base_const('HB_HIDE_WELCOME_PANEL', true)) {
+        add_action('in_admin_header', 'hb_admin_notices_hide_welcome', 1);
+    }
+}
+
+/**
+ * ダッシュボードの「WordPress へようこそ！」を出さない。
+ *
+ * wp_welcome_panel は wp-admin/includes/dashboard.php が読み込まれた時点で
+ * 登録される。plugins_loaded の段階ではまだ居ないので外せない。
+ * 画面の組み立てが始まる in_admin_header まで待つ。
+ *
+ * ユーザーごとの「非表示」設定（show_welcome_panel）には触らない。
+ */
+function hb_admin_notices_hide_welcome(): void
+{
+    remove_action('welcome_panel', 'wp_welcome_panel');
 }
 
 /* ---------------------------------------------------------------------------

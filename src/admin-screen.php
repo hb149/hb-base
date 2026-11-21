@@ -115,6 +115,31 @@ function hb_admin_screen_handle_actions(): void
             $notice = 'invite-created';
             break;
 
+        case 'install-plugin':
+            $slug   = isset($_POST['hb_slug']) ? sanitize_key(wp_unslash($_POST['hb_slug'])) : '';
+            $result = hb_required_plugins_install($slug);
+            $notice = is_wp_error($result) ? 'plugin-failed' : 'plugin-installed';
+            if (is_wp_error($result)) {
+                set_transient('hb_plugin_error_' . get_current_user_id(), $result->get_error_message(), 60);
+            }
+            break;
+
+        case 'install-plugins':
+            $result = hb_required_plugins_install_all();
+            $notice = empty($result['failed']) ? 'plugin-installed' : 'plugin-failed';
+            if (!empty($result['failed'])) {
+                set_transient(
+                    'hb_plugin_error_' . get_current_user_id(),
+                    implode(' / ', array_map(
+                        static function ($slug, $message) { return $slug . ': ' . $message; },
+                        array_keys($result['failed']),
+                        $result['failed']
+                    )),
+                    60
+                );
+            }
+            break;
+
         case 'clear-log':
             delete_option(HB_GUARD_LOG_OPTION);
             $notice = 'log-cleared';
@@ -183,6 +208,9 @@ function hb_admin_screen_render(): void
     hb_admin_screen_device_table('許可済み', hb_admin_screen_devices_by_status('trusted'), ['revoke']);
     hb_admin_screen_device_table('取り消し済み', hb_admin_screen_devices_by_status('revoked'), ['approve', 'delete']);
 
+    /* --- 標準プラグイン --- */
+    hb_admin_screen_plugins();
+
     /* --- 遮断の記録 --- */
     hb_admin_screen_guard_log();
 
@@ -221,13 +249,89 @@ function hb_admin_screen_notice(): void
         'device-deleted'  => '記録を削除しました。',
         'invite-created'  => '招待リンクを発行しました。下のURLを本人に渡してください。',
         'log-cleared'     => '記録を消去しました。',
+        'plugin-installed' => 'プラグインを導入しました。',
     ];
 
     $key = sanitize_key((string) wp_unslash($_GET['hb_notice']));
 
+    if ($key === 'plugin-failed') {
+        $message = get_transient('hb_plugin_error_' . get_current_user_id());
+        delete_transient('hb_plugin_error_' . get_current_user_id());
+
+        printf(
+            '<div class="notice notice-error"><p>導入に失敗しました。%s</p></div>',
+            esc_html(is_string($message) ? $message : '')
+        );
+
+        return;
+    }
+
     if (isset($messages[$key])) {
         printf('<div class="notice notice-success is-dismissible"><p>%s</p></div>', esc_html($messages[$key]));
     }
+}
+
+/**
+ * 標準プラグインの導入。
+ *
+ * 必須依存にはしていない（入っていなくても hb-base は動く）ので、
+ * 入れるかどうかはここで選ぶ。
+ */
+function hb_admin_screen_plugins(): void
+{
+    if (!current_user_can('install_plugins')) {
+        return;
+    }
+
+    $status  = hb_required_plugins_status();
+    $missing = array_filter($status, static function ($info) { return $info['state'] !== 'active'; });
+
+    echo '<h2>標準プラグイン</h2>';
+    echo '<p class="description">案件ごとに手で入れて回らなくて済むよう、ここからまとめて導入できます。'
+        . '入っていなくても hb-base は動きます（相手が居なければ連携部分が黙るだけ）。</p>';
+
+    echo '<table class="widefat striped" style="max-width:52rem"><tbody>';
+
+    foreach ($status as $slug => $info) {
+        $labels = [
+            'active'   => '<span style="color:#008a20">有効</span>',
+            'inactive' => '<span style="color:#996800">停止中</span>',
+            'missing'  => '<span style="color:#b32d2e">未導入</span>',
+        ];
+
+        echo '<tr>';
+        printf('<td style="width:20rem">%s<br><code>%s</code></td>', esc_html($info['name']), esc_html($slug));
+        printf('<td style="width:6rem">%s</td>', $labels[$info['state']]);
+        echo '<td>';
+
+        if ($info['state'] !== 'active') {
+            echo '<form method="post" style="display:inline">';
+            wp_nonce_field('hb_base_action');
+            echo '<input type="hidden" name="hb_action" value="install-plugin">';
+            printf('<input type="hidden" name="hb_slug" value="%s">', esc_attr($slug));
+            printf(
+                '<button type="submit" class="button">%s</button>',
+                $info['state'] === 'inactive' ? '有効化' : 'インストールして有効化'
+            );
+            echo '</form>';
+        }
+
+        echo '</td></tr>';
+    }
+
+    echo '</tbody></table>';
+
+    if (!empty($missing)) {
+        echo '<form method="post" style="margin-top:.5rem">';
+        wp_nonce_field('hb_base_action');
+        echo '<input type="hidden" name="hb_action" value="install-plugins">';
+        submit_button(sprintf('足りない %d 本をまとめて導入', count($missing)), 'primary', 'submit', false);
+        echo '</form>';
+    }
+
+    echo '<p class="description" style="margin-top:.75rem">'
+        . '一覧は <code>HB_REQUIRED_PLUGINS</code> で差し替えられます。'
+        . 'WordPress.org にあるものだけが対象です（ACF PRO などの有料プラグインは扱えません）。</p>';
 }
 
 function hb_admin_screen_invite_box($invite): void
