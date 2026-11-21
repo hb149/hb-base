@@ -373,6 +373,16 @@ function hb_device_invite_revoke(string $id): void
     hb_device_invites_save($invites);
 }
 
+/** 記録ごと消す。履歴を残したくないとき。 */
+function hb_device_invite_delete(string $id): void
+{
+    $invites = hb_device_invites_all();
+
+    unset($invites[$id]);
+
+    hb_device_invites_save($invites);
+}
+
 /** 未使用・未期限切れ・取り消し済みのどれか。 */
 function hb_device_invite_state(array $invite): string
 {

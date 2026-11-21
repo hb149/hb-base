@@ -174,6 +174,14 @@ function hb_admin_screen_handle_actions(): void
             }
             break;
 
+        case 'invite-delete':
+            $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
+            if ($id !== '') {
+                hb_device_invite_delete($id);
+                $notice = 'invite-deleted';
+            }
+            break;
+
         case 'invite-revoke':
             $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
             if ($id !== '') {
@@ -368,6 +376,7 @@ function hb_admin_screen_notice(): void
         'invite-created'   => '招待リンクを発行しました。下のURLを本人に渡してください（この画面を離れると二度と表示できません）。',
         'invite-mailed'    => '招待リンクを発行し、メールを送信しました。',
         'invite-revoked'   => '招待リンクを取り消しました。',
+        'invite-deleted'   => '招待の記録を削除しました。',
         'log-cleared'      => '記録を消去しました。',
         'plugin-installed' => 'プラグインを導入しました。',
         'plugin-restored'  => '自動有効化の対象に戻しました。次に管理画面を開いたときに有効化されます。',
@@ -405,10 +414,14 @@ function hb_admin_screen_devices(): void
     echo '<th scope="col">IP</th><th scope="col">ブラウザ</th><th scope="col">日時</th><th scope="col">操作</th>';
     echo '</tr></thead><tbody>';
 
+    // 操作は「いまの状態をどう変えるか」で書く。
+    // プラグイン一覧の「自動更新を有効化／無効化」と同じ考え方。
+    $delete = ['delete' => ['label' => '削除', 'confirm' => 'この端末の記録を削除します。よろしいですか。']];
+
     $states = [
-        'pending' => ['承認待ち', ['approve' => '許可する', 'delete' => '削除']],
-        'trusted' => ['許可済み', ['revoke' => '取り消す']],
-        'revoked' => ['取り消し済み', ['approve' => '許可する', 'delete' => '削除']],
+        'trusted' => ['有効', ['revoke'  => '無効にする'] + $delete],
+        'revoked' => ['無効', ['approve' => '有効にする'] + $delete],
+        'pending' => ['承認待ち', ['approve' => '有効にする'] + $delete],
     ];
 
     foreach ($devices as $id => $device) {
@@ -533,12 +546,11 @@ function hb_admin_screen_invite_list(): void
             ? '<code>' . esc_html((string) $invite['device']) . '</code>'
             : '—');
 
+        $actions = $state === 'open' ? ['invite-revoke' => '取り消す'] : [];
+        $actions['invite-delete'] = ['label' => '削除', 'confirm' => 'この招待の記録を削除します。よろしいですか。'];
+
         echo '<td>';
-        hb_admin_screen_row_actions(
-            $state === 'open' ? ['invite-revoke' => '取り消す'] : [],
-            'hb_id',
-            $id
-        );
+        hb_admin_screen_row_actions($actions, 'hb_id', $id);
         echo '</td></tr>';
     }
 
@@ -566,10 +578,15 @@ function hb_admin_screen_row_actions(array $actions, string $field, string $valu
     wp_nonce_field('hb_base_action');
     printf('<input type="hidden" name="%s" value="%s">', esc_attr($field), esc_attr($value));
 
-    foreach ($actions as $action => $label) {
+    foreach ($actions as $action => $spec) {
+        $label   = is_array($spec) ? (string) $spec['label'] : (string) $spec;
+        $confirm = is_array($spec) ? (string) ($spec['confirm'] ?? '') : '';
+
         printf(
-            '<button type="submit" name="hb_action" value="%s" class="button">%s</button> ',
+            '<button type="submit" name="hb_action" value="%s" class="button"%s>%s</button> ',
             esc_attr($action),
+            // 取り返しのつかない操作だけ一度止める。コアも削除系で同じやり方をしている。
+            $confirm !== '' ? ' onclick="return confirm(' . esc_attr(wp_json_encode($confirm)) . ')"' : '',
             esc_html($label)
         );
     }
