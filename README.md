@@ -6,6 +6,7 @@ WordPress案件で共通して使う土台。1つのリポジトリを直せば�
 - **ログイン画面の整形** — 並びと幅だけ整える（色と角丸は WordPress の既定のまま）
 - **パスキーの日本語化** — Secure Passkeys の画面文言を日本語にする
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
+- **宣伝パネルの抑制** — 「購読してください」「レビューを書いてください」を出さない
 - **管理画面のアクセス制限** — 固定IPと、管理者が許可した端末だけを通す
 
 設定はすべて `wp-config.php` の定数。DBに秘密を置かないので、本番DBをローカルに
@@ -101,6 +102,11 @@ define('HB_LOGIN_STYLE',  false);      // 整形ごと止める
 // 初期値を変えたいキーだけ書く（初回投入より前に）
 define('HB_LLAR_SETTINGS', ['allowed_retries' => 3, 'lockout_duration' => 1800]);
 define('HB_LLAR_MANAGE', false);       // 初期値の投入ごと止める
+
+/* ---- 管理画面の宣伝パネル ---- */
+
+define('HB_HIDE_PROMO_NOTICES', false);                 // 抑制ごと止める
+define('HB_PROMO_NOTICE_WORDS', 'review, newsletter');  // 宣伝とみなす語を差し替える
 
 /* ---- 保守担当 ---- */
 
@@ -232,6 +238,26 @@ secure, dashboard, backend, panel, cms, manage）と、クライアントのペ�
 
 ---
 
+## 宣伝パネルの抑制
+
+プラグインを入れるたびに出る「インストールに成功しました！ニュースレターを購読」
+「レビューを書いてください」の類を、全案件で同じように黙らせる。
+
+**2段構え。**
+
+1. **フラグ** — そのプラグイン自身が持っている「表示済み」の印を先に立てる。
+   一番確実で、プラグインの作りに沿っている。分かっているものはこちら
+   （`hb_admin_notice_flags` フィルタで追加できる）
+2. **名前で除去** — 通知フックに登録された関数名が宣伝っぽければ外す。
+   新しく入れたプラグインにも効く。HTMLを見て判断するより安全で、
+   外し損ねても画面が壊れない
+
+**消さないもの**: WordPress本体の警告（更新・メンテナンス・初期パスワード・復旧モード）、
+プラグインの不具合通知、処理完了の通知、hb-base 自身の通知。
+関数名で判断しているので本体の通知に巻き添えが出ない。
+
+---
+
 ## Limit Login Attempts の初期設定
 
 [Limit Login Attempts Reloaded](https://ja.wordpress.org/plugins/limit-login-attempts-reloaded/)
@@ -309,6 +335,7 @@ src/acfe-ja.php      ACF Extended の日本語化
 src/login-url.php    ログインURLの差し替え
 src/login-ui.php     ログイン画面の整形
 src/limit-login.php  Limit Login Attempts の初期設定
+src/admin-notices.php 宣伝パネルの抑制
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面

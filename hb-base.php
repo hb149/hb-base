@@ -43,6 +43,7 @@ require_once __DIR__ . '/src/turnstile.php';
 require_once __DIR__ . '/src/login-url.php';
 require_once __DIR__ . '/src/login-ui.php';
 require_once __DIR__ . '/src/limit-login.php';
+require_once __DIR__ . '/src/admin-notices.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -96,5 +97,9 @@ function hb_base_boot(): void
     }
     if (is_admin()) {
         hb_admin_screen_init();
+
+        if (hb_base_module_enabled('admin_notices')) {
+            hb_admin_notices_init();
+        }
     }
 }
