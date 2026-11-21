@@ -45,6 +45,7 @@ require_once __DIR__ . '/src/login-ui.php';
 require_once __DIR__ . '/src/limit-login.php';
 require_once __DIR__ . '/src/admin-notices.php';
 require_once __DIR__ . '/src/required-plugins.php';
+require_once __DIR__ . '/src/plugin-defaults.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -98,6 +99,9 @@ function hb_base_boot(): void
     }
     if (hb_base_module_enabled('required_plugins')) {
         hb_required_plugins_init();
+    }
+    if (hb_base_module_enabled('plugin_defaults')) {
+        hb_plugin_defaults_init();
     }
     if (is_admin()) {
         hb_admin_screen_init();

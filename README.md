@@ -112,6 +112,11 @@ define('HB_AUTO_INSTALL', false);          // 自動ダウンロードをやめ�
 define('HB_FORCE_ACTIVATE', false);        // 自動有効化をやめる
 define('HB_LOCK_REQUIRED_PLUGINS', false); // 「停止」リンクを隠さない
 
+/* ---- 標準プラグインの初期設定 ---- */
+
+define('HB_PLUGIN_DEFAULTS', false);  // 初期設定の投入をやめる
+define('HB_PPP_DAYS', 7);             // プレビューリンクの有効日数
+
 /* ---- 管理画面の宣伝パネル ---- */
 
 define('HB_HIDE_PROMO_NOTICES', false);                 // 抑制ごと止める
@@ -329,6 +334,46 @@ ACF PRO のような有料プラグインは WordPress.org に無いので扱え
 
 ---
 
+## 標準プラグインの初期設定
+
+「既定のままだと困る」ところだけ直す。好みの問題には触らない。
+Limit Login Attempts と同じで**固定はしない**。さらに安全側に倒して、
+**そのプラグインの既定値のままのキーだけ**書き換えるので、
+運用中のサイトに後から入れても設定は変わらない。
+
+### Yoast Duplicate Post
+
+| 既定 | 入れる値 | 理由 |
+|---|---|---|
+| 複製できるのは投稿と固定ページだけ | 公開中の全投稿タイプ | 分譲地や施工事例こそ複製したい |
+| 複製元の列を出さない | 出す | どれが複製か追えないと運用で迷子になる |
+
+投稿タイプは固定で書かず、サイトに登録されているものから毎回決める。
+
+### SEO SIMPLE PACK
+
+| 既定 | 入れる値 | 理由 |
+|---|---|---|
+| `pt_archive_noindex` = 1 | 索引させる | **カスタム投稿タイプのアーカイブが既定で noindex**。分譲地一覧は検索から入ってほしいページ |
+| 説明文が英語（`This is the archive page for …`） | 日本語 | 日本語サイトの検索結果に英文が出る |
+| `404: Page not found` | `ページが見つかりません` | 同上 |
+| `Searched: …` | `「…」の検索結果` | 同上 |
+| `feed_noindex` = 空 | 1 | 本文の重複として扱われる |
+
+投稿タイプやタクソノミーごとのキー（`property_noindex` など）はサイトによって
+有無が変わるので触らない。案件側で決めること。
+
+### Public Post Preview
+
+設定画面を持たずフィルタで決まるプラグインなので、土台側で指定する。
+
+| 既定 | 入れる値 | 理由 |
+|---|---|---|
+| リンクの有効期限 48時間 | 7日（`HB_PPP_DAYS`） | 金曜に送ると月曜には切れている |
+| 対象は投稿と固定ページ | 公開中の全投稿タイプ | 分譲地もクライアントに見せたい |
+
+---
+
 ## Limit Login Attempts の初期設定
 
 [Limit Login Attempts Reloaded](https://ja.wordpress.org/plugins/limit-login-attempts-reloaded/)
@@ -408,6 +453,7 @@ src/login-ui.php     ログイン画面の整形
 src/limit-login.php  Limit Login Attempts の初期設定
 src/admin-notices.php 宣伝パネルの抑制
 src/required-plugins.php 標準プラグインのまとめ導入
+src/plugin-defaults.php  標準プラグインの初期設定
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面
