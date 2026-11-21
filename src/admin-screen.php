@@ -61,28 +61,28 @@ function (cfg) {
     var button = event.target.closest('button[data-hb-ajax]');
     if (!button) { return; }
 
-    var form = button.closest('form');
-    var row  = button.closest('tr[data-hb-row]');
-    if (!form || !row) { return; }
+    var row = button.closest('tr[data-hb-row]');
+    if (!row) { return; }
 
     var confirmText = button.getAttribute('data-hb-confirm');
     if (confirmText && !window.confirm(confirmText)) { event.preventDefault(); return; }
 
     event.preventDefault();
 
-    var body = new FormData(form);
-    body.append('action', 'hb_row_action');
-    body.append('nonce', cfg.nonce);
-    body.append('hb_action', button.value);
-    body.append('hb_row', row.getAttribute('data-hb-row'));
+    var body = new URLSearchParams({
+      action: 'hb_row_action',
+      nonce: cfg.nonce,
+      hb_row_action: button.value,
+      hb_row: row.getAttribute('data-hb-row')
+    });
 
     row.style.opacity = '.5';
-    form.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    row.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
 
     fetch(cfg.url, { method: 'POST', body: body, credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (res) {
-        if (!res || !res.success) { form.submit(); return; }
+        if (!res || !res.success) { location.reload(); return; }
 
         if (res.data.row) {
           row.outerHTML = res.data.row;
@@ -92,7 +92,7 @@ function (cfg) {
 
         if (res.data.message) { hbNotice(res.data.message, res.data.type || 'success'); }
       })
-      .catch(function () { form.submit(); });
+      .catch(function () { location.reload(); });
   });
 
   // 画面上部に出す。WordPressの通知と同じ見た目になる。
@@ -114,6 +114,18 @@ function (cfg) {
 JS;
 }
 
+/**
+ * 「操作|対象」を分解する。
+ *
+ * @return array{0:string,1:string}
+ */
+function hb_admin_screen_parse_row_action(string $raw): array
+{
+    $parts = explode('|', $raw, 2);
+
+    return [sanitize_key($parts[0]), isset($parts[1]) ? sanitize_text_field($parts[1]) : ''];
+}
+
 /** 行の操作をその場で処理して、差し替えるHTMLを返す。 */
 function hb_admin_screen_ajax(): void
 {
@@ -123,8 +135,7 @@ function hb_admin_screen_ajax(): void
         wp_send_json_error();
     }
 
-    $action = sanitize_key((string) wp_unslash($_POST['hb_action'] ?? ''));
-    $notice = hb_admin_screen_do_action($action);
+    $notice = hb_admin_screen_do_action('');
     $row    = sanitize_text_field((string) wp_unslash($_POST['hb_row'] ?? ''));
 
     wp_send_json_success([
@@ -225,13 +236,17 @@ function hb_admin_screen_handle_actions(): void
         return;
     }
 
-    if (!isset($_POST['hb_action']) || !current_user_can('manage_options')) {
+    if (!isset($_POST['hb_action']) && !isset($_POST['hb_row_action'])) {
+        return;
+    }
+
+    if (!current_user_can('manage_options')) {
         return;
     }
 
     check_admin_referer('hb_base_action');
 
-    $notice = hb_admin_screen_do_action(sanitize_key((string) wp_unslash($_POST['hb_action'])));
+    $notice = hb_admin_screen_do_action(sanitize_key((string) wp_unslash($_POST['hb_action'] ?? '')));
 
     wp_safe_redirect(add_query_arg('hb_notice', $notice, admin_url('options-general.php?page=hb-base')));
     exit;
@@ -249,6 +264,11 @@ function hb_admin_screen_do_action(string $action): string
 {
     $id     = isset($_POST['hb_id']) ? sanitize_text_field(wp_unslash((string) $_POST['hb_id'])) : '';
     $notice = '';
+
+    // 行のボタンは「操作|対象」の形で1つの値として送られてくる。
+    if ($action === '' && isset($_POST['hb_row_action'])) {
+        [$action, $id] = hb_admin_screen_parse_row_action((string) wp_unslash($_POST['hb_row_action']));
+    }
 
     switch ($action) {
         case 'approve':
@@ -389,8 +409,13 @@ function hb_admin_screen_render(): void
 
     hb_admin_screen_notice();
 
-    // 見出し＋form-table。WordPressの設定画面はどれもこの組み方で、
-    // テーマやプラグインが管理画面に手を入れている場合も同じ見た目に揃う。
+    // 中身は1つのフォームに入れる。WordPressの設定画面はどれもこの形で、
+    // 管理画面に手を入れているプラグイン（ACF Extended など）も
+    // 「.wrap の直下の form」を目印に整えるため、同じ見た目に揃う。
+    echo '<form method="post">';
+    wp_nonce_field('hb_base_action');
+
+    // 見出し＋form-table。
     hb_admin_screen_section('状態', 'hb_admin_screen_status');
     hb_admin_screen_section('端末の許可', 'hb_admin_screen_devices');
 
@@ -400,10 +425,22 @@ function hb_admin_screen_render(): void
 
     hb_admin_screen_section('遮断した要求', 'hb_admin_screen_guard_log');
 
+    echo '</form>';
     echo '</div>';
 }
 
-/** 中身が何も出ない節は見出しごと出さない。 */
+/**
+ * 節を1枚のカードにする。
+ *
+ * WordPress の postbox のマークアップをそのまま使う。コア自身も
+ * プロフィール画面の「アプリケーションパスワード」で同じ書き方をしている
+ * （wp-admin/user-edit.php）。
+ *
+ * add_meta_box() は使わない。折りたたみの矢印や「表示オプション」が付いて、
+ * 他の設定画面と見た目が変わってしまうため。
+ *
+ * 中身が何も出ない節はカードごと出さない。
+ */
 function hb_admin_screen_section(string $title, callable $render): void
 {
     ob_start();
@@ -414,9 +451,11 @@ function hb_admin_screen_section(string $title, callable $render): void
         return;
     }
 
-    printf('<h2>%s</h2>', esc_html($title));
-
-    echo $inside; // 各描画関数でエスケープ済み
+    printf(
+        '<div class="postbox"><div class="postbox-header"><h2>%s</h2></div><div class="inside">%s</div></div>',
+        esc_html($title),
+        $inside // 各描画関数でエスケープ済み
+    );
 }
 
 /* --- 状態 ------------------------------------------------------------- */
@@ -638,10 +677,6 @@ function hb_admin_screen_invite_box($url): void
     echo '<p class="description">発行したURLを、許可したい端末で開いてもらいます。'
         . '開いた端末だけが許可され、1回使うと無効になります。</p>';
 
-    echo '<form method="post">';
-    wp_nonce_field('hb_base_action');
-    echo '<input type="hidden" name="hb_action" value="invite">';
-
     echo '<table class="form-table" role="presentation"><tbody>';
 
     echo '<tr><th scope="row"><label for="hb_label">宛名（覚書）</label></th><td>';
@@ -667,8 +702,9 @@ function hb_admin_screen_invite_box($url): void
     echo '</td></tr>';
 
     echo '</tbody></table>';
-    submit_button('発行する', 'secondary', 'submit', false);
-    echo '</form>';
+
+    // 送信は画面全体を包むフォームに乗る。ボタン自身が操作名を送る。
+    echo '<p class="submit"><button type="submit" name="hb_action" value="invite" class="button button-secondary">発行する</button></p>';
 
     if (is_string($url) && $url !== '') {
         echo '<table class="form-table" role="presentation"><tbody>';
@@ -769,26 +805,20 @@ function hb_admin_screen_row_actions(array $actions, string $field, string $valu
         return;
     }
 
-    echo '<form method="post">';
-    wp_nonce_field('hb_base_action');
-    printf('<input type="hidden" name="%s" value="%s">', esc_attr($field), esc_attr($value));
-
     foreach ($actions as $action => $spec) {
         $label   = is_array($spec) ? (string) $spec['label'] : (string) $spec;
         $confirm = is_array($spec) ? (string) ($spec['confirm'] ?? '') : '';
 
+        // ボタン1つで「何を・どれに」を送る。
+        // 行ごとに <form> を置くと、画面全体を包むフォームと入れ子になってしまう。
         printf(
-            '<button type="submit" name="hb_action" value="%s" class="button"%s%s>%s</button> ',
-            esc_attr($action),
+            '<button type="submit" name="hb_row_action" value="%s" class="button" data-hb-ajax="1"%s>%s</button> ',
+            esc_attr($action . '|' . $value),
             // 取り返しのつかない操作だけ一度止める。
             $confirm !== '' ? ' data-hb-confirm="' . esc_attr($confirm) . '"' : '',
-            // JSが動く環境ではその場で反映する。動かなければ通常の送信になる。
-            ' data-hb-ajax="1"',
             esc_html($label)
         );
     }
-
-    echo '</form>';
 }
 
 /* --- 標準プラグイン ------------------------------------------------------ */
@@ -817,11 +847,10 @@ function hb_admin_screen_plugins(): void
     echo '</tbody></table>';
 
     if (!empty($missing)) {
-        echo '<form method="post">';
-        wp_nonce_field('hb_base_action');
-        echo '<input type="hidden" name="hb_action" value="install-plugins">';
-        submit_button(sprintf('足りない %d 本をまとめて導入', count($missing)), 'secondary', 'submit', false);
-        echo '</form>';
+        printf(
+            '<p class="submit"><button type="submit" name="hb_action" value="install-plugins" class="button button-secondary">%s</button></p>',
+            esc_html(sprintf('足りない %d 本をまとめて導入', count($missing)))
+        );
     }
 
     echo '<p class="description">一覧は <code>HB_REQUIRED_PLUGINS</code> で差し替えられます。'
@@ -892,9 +921,5 @@ function hb_admin_screen_guard_log(): void
 
     echo '</tbody></table>';
 
-    echo '<form method="post">';
-    wp_nonce_field('hb_base_action');
-    echo '<input type="hidden" name="hb_action" value="clear-log">';
-    submit_button('記録を消去', 'secondary', 'submit', false);
-    echo '</form>';
+    echo '<p class="submit"><button type="submit" name="hb_action" value="clear-log" class="button button-secondary">記録を消去</button></p>';
 }
