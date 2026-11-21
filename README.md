@@ -8,6 +8,7 @@ WordPress案件で共通して使う土台。1つのリポジトリを直せば�
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
 - **自動更新を最初から有効化** — WordPress本体・プラグイン・テーマ
 - **標準プラグインのまとめ導入** — 案件ごとに手で入れて回らない
+- **著者ページを出さない** — 薄いページを消し、ログイン名の漏れも塞ぐ
 - **管理メニュー名の短縮** — 製品名そのままのメニューを分かる名前に
 - **宣伝パネルの抑制** — 「購読してください」「レビューを書いてください」を出さない
 - **管理画面のアクセス制限** — 固定IPと、管理者が許可した端末だけを通す
@@ -113,6 +114,10 @@ define('HB_REQUIRED_PLUGINS', 'limit-login-attempts-reloaded, secure-passkeys, s
 define('HB_AUTO_INSTALL', false);          // 自動ダウンロードをやめる
 define('HB_FORCE_ACTIVATE', false);        // 自動有効化をやめる
 define('HB_LOCK_REQUIRED_PLUGINS', false); // 「停止」リンクを隠さない
+
+/* ---- 著者ページ ---- */
+
+define('HB_AUTHOR_ARCHIVES', true);   // 著者ページを使う（既定は出さない）
 
 /* ---- 自動更新 ---- */
 
@@ -341,6 +346,30 @@ ACF PRO のような有料プラグインは WordPress.org に無いので扱え
 
 ---
 
+## 著者ページを出さない
+
+企業サイトでは書き手が1〜2人しかおらず、`/author/xxx/` はトップや一覧と
+中身がほとんど同じ薄いページになる。検索に出す価値がない。
+
+それ以上に、**このURLはログイン名を外に晒す。**
+`/?author=1` を開くと WordPress が `/author/<ログイン名>/` に転送するので、
+誰でも管理者のログイン名を1アクセスで調べられる。総当たりの出発点になる。
+
+| | |
+|---|---|
+| `/author/xxx/` | 404 |
+| `/?author=1` | 404（転送されないのでログイン名が出ない） |
+| サイトマップ | 著者を載せない |
+
+**ホームへ転送せず404にしている。** 中身の違うURLを一律でトップに飛ばすと、
+検索エンジンからは「実質404なのに200を返すページ」と見なされる。
+
+SEO SIMPLE PACK にも同じ用途の設定（`author_disable`）があるが、
+そちらはホームへの転送なので使っていない。設定画面で有効にすれば
+そちらが優先される。
+
+---
+
 ## 管理メニュー名の短縮
 
 プラグインは自分の製品名をそのままメニューに出す。クライアントには何の機能か
@@ -511,6 +540,7 @@ src/required-plugins.php 標準プラグインのまとめ導入
 src/plugin-defaults.php  標準プラグインの初期設定
 src/auto-updates.php     自動更新を最初から有効化
 src/plugin-labels.php    管理メニュー名の短縮
+src/author-archives.php  著者ページを出さない
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面
