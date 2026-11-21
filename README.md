@@ -1,0 +1,213 @@
+# HB ベース
+
+WordPress案件で共通して使う土台。1つのリポジトリを直せば、入れている全サイトに更新が配れる。
+
+- **パスキーの日本語化** — Secure Passkeys の画面文言を日本語にする
+- **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
+- **管理画面のアクセス制限** — 固定IPと、管理者が許可した端末だけを通す
+
+設定はすべて `wp-config.php` の定数。DBに秘密を置かないので、本番DBをローカルに
+持ってきても鍵は付いて回らない。
+
+---
+
+## 入れかた
+
+### 本番・テストサイト
+
+1. [Releases](https://github.com/hb149/hb-base/releases) の `hb-base.zip` を
+   「プラグイン → 新規追加 → プラグインのアップロード」から入れる
+2. 有効化する
+3. プラグイン一覧で **「自動更新を有効化」** を押す
+4. `wp-config.php` に設定を書く（下記）
+
+4 を済ませておけば、以後こちらが Release を出すだけでサイト側が勝手に上がる。
+案件ごとに手で更新して回る必要はない。
+
+### 開発中のローカル
+
+`docker-compose.yml` でソースを直接マウントする。
+
+```yaml
+  wp:
+    volumes:
+      - ./wp:/var/www/html
+      - ../WP共通/hb-base:/var/www/html/wp-content/plugins/hb-base:ro
+```
+
+`:ro` にしてあるのは、ローカルのWPが勝手に更新をかけて共有ソースを
+上書きするのを防ぐため。ホスト側からの編集は普通にできる。
+
+---
+
+## 設定
+
+`wp-config.php` の「stop editing」より上に書く。すべて任意で、
+書かなければそのモジュールは何もしない。
+
+```php
+/* ---- 管理画面のアクセス制限 ---- */
+
+// 'off'（既定）→ 'log'（遮断せず記録だけ）→ 'on'（遮断）の順に上げる
+define('HB_ADMIN_GUARD', 'on');
+
+// 許可IP。CIDR可・カンマ区切り。空でも、許可した端末からは入れる
+define('HB_ADMIN_ALLOW_IPS', '203.0.113.10, 198.51.100.0/24');
+
+// 締め出された時の逃げ道。長いランダム文字列にすること
+//   https://example.com/wp-admin/?hb-unlock=<この値>
+define('HB_ADMIN_GUARD_UNLOCK_KEY', 'ここに長いランダム文字列');
+
+// 端末を信頼し続ける日数（既定 180）
+define('HB_ADMIN_DEVICE_DAYS', 180);
+
+// 遮断画面から申請フォームを出すか（既定 true）
+define('HB_ADMIN_GUARD_ALLOW_REQUEST', true);
+
+// 守る範囲。'admin+login'（既定）/ 'admin'（wp-login.php は守らない）
+define('HB_ADMIN_GUARD_SCOPE', 'admin+login');
+
+// Cloudflare などのプロキシ経由なら、その接続元のCIDRを書く。
+// 書いた時だけ CF-Connecting-IP / X-Forwarded-For を読む（既定は一切読まない）
+define('HB_TRUSTED_PROXIES', '');
+
+/* ---- Cloudflare Turnstile ---- */
+
+define('HB_TURNSTILE_SITE_KEY',   '0x4AAA...');
+define('HB_TURNSTILE_SECRET_KEY', '0x4AAA...');
+
+// 出すフォーム（既定 login, lostpassword, register）
+define('HB_TURNSTILE_FORMS', 'login, lostpassword');
+
+/* ---- 共通 ---- */
+
+// 動かすモジュールを絞る（既定は全部）
+define('HB_BASE_MODULES', 'passkey_ja, turnstile, admin_guard');
+```
+
+ローカル検証には Cloudflare 公式の「常に成功する」テストキーが使える。
+
+| | 値 |
+|---|---|
+| サイトキー | `1x00000000000000000000AA` |
+| シークレット | `1x0000000000000000000000000000000AA` |
+
+---
+
+## 管理画面のアクセス制限
+
+### 考えかた
+
+固定IPを持っていないクライアントが多いので、**IPではなく端末を許可する**のを主にしている。
+IP許可リストは、事務所など固定回線がある場合の補助。
+
+通る条件は3つのうちどれか1つ。
+
+1. 接続元IPが `HB_ADMIN_ALLOW_IPS` に入っている
+2. その端末が許可されている
+3. 緊急解除キー付きで開いた
+
+守る範囲は `/wp-admin/` と `wp-login.php` だけ。公開ページには一切影響しない。
+`admin-ajax.php` と `admin-post.php` は、公開側のAJAXや問い合わせフォームが
+通る入口なので対象外にしている。
+
+### 端末を許可する2つの経路
+
+**招待する（管理者から渡す）**
+
+設定 → HBベース → 「招待リンクを発行する」でURLを作り、許可したい端末で開いてもらう。
+1回限り・30分で失効。開いた時点でその端末が許可される。
+
+**申請を受ける（クライアントから）**
+
+許可されていない端末で管理画面を開くと、遮断画面に申請フォームが出る。
+送信すると管理者メールに通知が飛び、管理画面に「承認待ち」として並ぶ。
+「許可する」を押せば、その端末から入れるようになる。
+
+許可IPから一度入った端末も自動で覚える。事務所で設定した端末は、
+その後モバイル回線に移っても使える。
+
+### 導入の手順
+
+いきなり `'on'` にすると自分が入れなくなることがある。
+
+1. `'log'` にして数日動かす
+2. 設定 → HBベース の「遮断した要求」に、身内のIPや端末が並んでいないか見る
+3. 問題なければ `'on'` にする
+
+### 締め出された時
+
+| 状況 | 復帰方法 |
+|---|---|
+| 解除キーを設定してある | `https://example.com/wp-admin/?hb-unlock=<キー>` を開く |
+| サーバーのファイルを触れる | `wp-config.php` の `HB_ADMIN_GUARD` を `'off'` に戻す |
+| WP-CLIが使える | `wp plugin deactivate hb-base` |
+
+WP-CLI・cron からのアクセスは最初から対象外なので、自動処理が止まることはない。
+
+---
+
+## Cloudflare Turnstile
+
+ログインフォームに人間確認を足す。reCAPTCHA と違って利用者の操作が要らず、
+Cookieも置かないので同意取得の話にならない。
+
+**パスキーでのログインはこの検証を通らない。** 別経路（admin-ajax）で、
+秘密を送らないので総当たりの的にならず、プラグイン側に回数制限もあるため、
+わざと対象外にしている。守りたいのはパスワードの総当たり。
+
+Cloudflare に問い合わせできなかったときは、本番は止め、ローカルは通す。
+`HB_TURNSTILE_FAIL_OPEN` で上書きできる。
+
+---
+
+## パスキーの日本語化
+
+[Secure Passkeys](https://ja.wordpress.org/plugins/secure-passkeys/) が前提。
+本家に日本語の言語パックが無く（同梱はアラビア語のみ）、ボタンもエラーも英語で出る。
+
+翻訳ファイルを作るのではなく `gettext` フィルタで差し替えている。
+プラグイン本体を触らないので更新で消えず、原文が変わった箇所は
+英語のまま出るだけで壊れない。サイトのロケールが日本語でなければ何もしない。
+
+本家に日本語パックが入ったら `src/passkey-ja.php` は丸ごと不要になる。
+
+---
+
+## リリースのしかた
+
+1. `hb-base.php` の `Version:` を上げる
+2. コミットしてタグを打つ
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+GitHub Actions が `hb-base.zip` を作って Release に添付する。
+各サイトは6時間以内に更新を検知する（管理画面で「更新を確認」を押せば即）。
+
+タグとヘッダのバージョンが食い違っているとビルドが落ちるようにしてある。
+片方だけ上げる事故を防ぐため。
+
+---
+
+## 構成
+
+```
+hb-base.php          読み込みと更新登録だけ
+src/config.php       wp-config.php の定数を読む
+src/ip.php           接続元IPの判定（CIDR・プロキシ）
+src/device.php       端末の識別と許可
+src/admin-guard.php  /wp-admin と wp-login.php の門番
+src/turnstile.php    Cloudflare Turnstile
+src/passkey-ja.php   Secure Passkeys の日本語化
+src/updater.php      GitHub Releases からの自動更新
+src/admin-screen.php 設定 → HBベース
+views/blocked.php    遮断画面
+```
+
+`src/updater.php` は他の自作プラグインにもそのまま流用できる。
+本体で `hb_github_updater_register()` を1回呼ぶだけ。
+
+案件固有の事情はここに書かないこと。案件側の `mu-plugins` に置く。
