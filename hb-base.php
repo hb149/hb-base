@@ -55,6 +55,7 @@ require_once __DIR__ . '/src/client-ui.php';
 require_once __DIR__ . '/src/watch.php';
 require_once __DIR__ . '/src/support.php';
 require_once __DIR__ . '/src/support-screen.php';
+require_once __DIR__ . '/src/support-sidebar.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -138,6 +139,7 @@ function hb_base_boot(): void
 
         if (is_admin()) {
             hb_support_screen_init();
+            hb_support_sidebar_init();
         }
     }
     if (is_admin()) {

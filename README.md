@@ -460,6 +460,20 @@ Docker の WordPress 公式イメージには sendmail が入っていない。�
 - Webhook の受け口は `permission_callback` を署名検証にする
 - タイムアウトは画面10秒 / 巡回15秒、`sslverify = true`
 
+### 固定パネル
+
+管理画面のどの画面からでも、右下のつまみから開けるパネルで質問できる。
+サポート画面まで行かないと聞けない＝聞かれない、になるため。
+
+一覧 → やり取り → 返信、新規の依頼まで、パネルの中だけで完結する。
+本文の幅は変えない（開閉で記事の折り返しが変わると編集中の人の邪魔になる）。
+開閉の状態はその端末に覚えさせる。
+
+止めるときは `define('HB_SUPPORT_SIDEBAR', false);`。
+
+画面の組み立てはPHPが返し、JSは差し替えと送信だけ。
+状態からラベルを組み立てる判断をJS側に置くと、同じ判断が2か所に分かれて必ずずれる。
+
 ### 検査
 
 設定 → HBベース → サポート連携 に、未読とエラー10種の出し分けが並ぶ。
@@ -734,6 +748,9 @@ src/client-ui.php        ファイル編集の無効化・メニューの整理
 src/watch.php            管理者の増加・見慣れない端末の通知
 src/support.php          保守サポート（APIクライアント・巡回・Webhook）
 src/support-screen.php   保守サポートの管理画面
+src/support-sidebar.php  どの画面からでも開ける固定パネル
+assets/support-sidebar.* パネルの見た目と動き
+bin/check-contract.sh    契約の検査
 views/support/           一覧・詳細のテンプレート
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
