@@ -8,6 +8,7 @@ WordPress案件で共通して使う土台。1つのリポジトリを直せば�
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
 - **自動更新を最初から有効化** — WordPress本体・プラグイン・テーマ
 - **標準プラグインのまとめ導入** — 案件ごとに手で入れて回らない
+- **横道の遮断** — XML-RPC と REST のユーザー一覧を塞ぐ
 - **著者ページを出さない** — 薄いページを消し、ログイン名の漏れも塞ぐ
 - **管理メニュー名の短縮** — 製品名そのままのメニューを分かる名前に
 - **宣伝パネルの抑制** — 「購読してください」「レビューを書いてください」を出さない
@@ -119,6 +120,11 @@ define('HB_LOCK_REQUIRED_PLUGINS', false); // 「停止」リンクを隠さな�
 
 // ローカルの受け止め先（Mailpit など）。local 環境でのみ有効
 define('HB_MAIL_CATCHER', 'mail:1025');
+
+/* ---- 横道の遮断 ---- */
+
+define('HB_XMLRPC', true);      // XML-RPC を使う（既定は停止）
+define('HB_REST_USERS', true);  // RESTのユーザー一覧を未ログインにも見せる（既定は出さない）
 
 /* ---- 著者ページ ---- */
 
@@ -395,6 +401,24 @@ Docker の WordPress 公式イメージには sendmail が入っていない。�
 
 ---
 
+## 横道の遮断
+
+ログイン画面をいくら固めても、同じ資格情報を試せる入口が他にあれば意味がない。
+WordPress には既定で開いている横道が2つある。
+
+| | 既定 | 理由 |
+|---|---|---|
+| `xmlrpc.php` | 停止 | パスワードで認証でき、`system.multicall` で**1リクエストに何百回分もの試行**を詰められる。「1アクセス＝1回」と数える回数制限をすり抜ける |
+| `/wp-json/wp/v2/users` | 未ログインには出さない | 投稿のあるユーザーの `slug`（＝ログイン名）を返す。著者ページを404にしても、こちらが開いていれば同じことが調べられる |
+
+RESTは権限で弾くのではなく**経路そのものを外す**ので、`/wp-json/` でも
+`?rest_route=` でも届かない。ログイン中（ブロックエディタなど）は従来どおり。
+
+XML-RPC を止めると Jetpack と WordPress公式アプリが使えなくなる。
+必要な案件は `HB_XMLRPC` で戻す。
+
+---
+
 ## 著者ページを出さない
 
 企業サイトでは書き手が1〜2人しかおらず、`/author/xxx/` はトップや一覧と
@@ -596,6 +620,7 @@ src/auto-updates.php     自動更新を最初から有効化
 src/plugin-labels.php    管理メニュー名の短縮
 src/author-archives.php  著者ページを出さない
 src/mail.php             ローカルのメールの受け止め先
+src/hardening.php        XML-RPC・RESTユーザー一覧の遮断
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面

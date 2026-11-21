@@ -111,14 +111,9 @@ function hb_guard_path_is_admin(string $path): bool
 
 function hb_guard_path_is_login(string $path): bool
 {
-    if (basename($path) === 'wp-login.php') {
-        return true;
-    }
-
-    // ログインURLを差し替えている案件では、そちらも守る対象にする。
-    $slug = function_exists('hb_login_slug') ? hb_login_slug() : '';
-
-    return $slug !== '' && trim($path, '/') === $slug;
+    return function_exists('hb_is_login_request')
+        ? hb_is_login_request()
+        : basename($path) === 'wp-login.php';
 }
 
 /**

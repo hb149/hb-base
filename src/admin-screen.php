@@ -510,6 +510,7 @@ function hb_admin_screen_status(): void
     );
     hb_admin_screen_row('自動更新', hb_auto_updates_summary());
     hb_admin_screen_row('メール', hb_mail_summary());
+    hb_admin_screen_row('入口の遮断', hb_hardening_summary());
     hb_admin_screen_row(
         '保守担当',
         hb_base_to_list(hb_base_const('HB_MAINTAINERS', ''))

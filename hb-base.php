@@ -50,6 +50,7 @@ require_once __DIR__ . '/src/auto-updates.php';
 require_once __DIR__ . '/src/plugin-labels.php';
 require_once __DIR__ . '/src/author-archives.php';
 require_once __DIR__ . '/src/mail.php';
+require_once __DIR__ . '/src/hardening.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -118,6 +119,9 @@ function hb_base_boot(): void
     }
     if (hb_base_module_enabled('mail')) {
         hb_mail_init();
+    }
+    if (hb_base_module_enabled('hardening')) {
+        hb_hardening_init();
     }
     if (is_admin()) {
         hb_admin_screen_init();

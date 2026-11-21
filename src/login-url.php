@@ -219,6 +219,25 @@ function hb_login_url_request_path(): string
     return $path === '' ? '/' : $path;
 }
 
+/**
+ * この要求はログイン画面（差し替え後も含む）か。
+ *
+ * 他のモジュールが「wp-login.php かどうか」で判断すると、
+ * URLを差し替えた案件でその判断が丸ごと外れる。判定はここ1か所に置く。
+ */
+function hb_is_login_request(): bool
+{
+    $path = hb_login_url_request_path();
+
+    if (basename($path) === 'wp-login.php') {
+        return true;
+    }
+
+    $slug = hb_login_slug();
+
+    return $slug !== '' && trim($path, '/') === $slug;
+}
+
 function hb_login_url_is_admin_path(string $path): bool
 {
     return strpos($path, '/wp-admin/') !== false || substr($path, -9) === '/wp-admin';

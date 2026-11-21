@@ -117,9 +117,9 @@ function hb_turnstile_is_form_post(): bool
         return false;
     }
 
-    $path = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH);
-
-    return basename($path) === 'wp-login.php';
+    // ログインURLを差し替えている案件では wp-login.php では来ない。
+    // ここを自前で判定すると、差し替えた瞬間に検証ごと素通りになる。
+    return hb_is_login_request();
 }
 
 /**
