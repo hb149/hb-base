@@ -366,7 +366,8 @@ function hb_required_plugins_auto_install_init(): void
     }
 
     add_action('admin_init', 'hb_required_plugins_schedule', 6);
-    add_action('admin_notices', 'hb_required_plugins_progress_notice');
+
+    hb_required_plugins_progress_init();
 }
 
 /** 足りないものがあれば、裏での導入を予約する。 */
@@ -456,26 +457,30 @@ function hb_required_plugins_install_next(): void
     }
 }
 
-/** 導入中・導入できなかったことを管理画面に出す。黙って進むと不安になるため。 */
-function hb_required_plugins_progress_notice(): void
+/* ---------------------------------------------------------------------------
+ * 進捗の表示
+ *
+ * cron 任せだと、管理画面を見ている人には何も起きていないように見える。
+ * 開いているページから1本ずつ進めて、その場で残りを数える。
+ * cron のほうは「誰も見ていないとき」の受け皿として残す。
+ * -------------------------------------------------------------------------*/
+
+const HB_INSTALL_LOCK = 'hb_install_lock';
+
+function hb_required_plugins_progress_init(): void
 {
-    if (!current_user_can('activate_plugins')) {
-        return;
-    }
+    add_action('admin_notices', 'hb_required_plugins_progress_notice');
+    add_action('admin_enqueue_scripts', 'hb_required_plugins_progress_script');
+    add_action('wp_ajax_hb_install_step', 'hb_required_plugins_ajax_step');
+}
 
+/** いまの状況をまとめる。 */
+function hb_required_plugins_progress(): array
+{
+    $all     = hb_required_plugins();
     $pending = hb_required_plugins_pending();
+    $fails   = hb_required_plugins_fails();
 
-    if (!empty($pending)) {
-        printf(
-            '<div class="notice notice-info"><p>標準プラグインを裏で導入しています（残り %d 本）。'
-            . 'しばらくしてから画面を再読み込みしてください。</p></div>',
-            count($pending)
-        );
-
-        return;
-    }
-
-    $fails = hb_required_plugins_fails();
     $stuck = [];
 
     foreach ($fails as $slug => $count) {
@@ -484,16 +489,155 @@ function hb_required_plugins_progress_notice(): void
         }
     }
 
-    if (empty($stuck)) {
+    return [
+        'total'   => count($all),
+        'pending' => array_values($pending),
+        'stuck'   => $stuck,
+        'done'    => count($all) - count($pending) - count($stuck),
+        'error'   => (string) ($fails['_last_error'] ?? ''),
+    ];
+}
+
+function hb_required_plugins_progress_notice(): void
+{
+    if (!current_user_can('activate_plugins')) {
         return;
     }
 
-    printf(
-        '<div class="notice notice-warning"><p>標準プラグインを導入できませんでした: <code>%s</code><br>'
-        . '<small>%s</small><br>'
-        . '<a href="%s">HBベースの画面</a>から手動で導入するか、サーバーの書き込み権限を確認してください。</p></div>',
-        esc_html(implode(', ', $stuck)),
-        esc_html((string) ($fails['_last_error'] ?? '')),
-        esc_url(admin_url('options-general.php?page=hb-base'))
+    $p = hb_required_plugins_progress();
+
+    if (empty($p['pending']) && empty($p['stuck'])) {
+        return;
+    }
+
+    echo '<div class="notice notice-info" id="hb-install-progress"';
+    printf(' data-total="%d">', (int) $p['total']);
+    echo '<p><strong>標準プラグインを導入しています</strong></p>';
+    echo '<p class="hb-install-line">' . esc_html(hb_required_plugins_progress_text($p)) . '</p>';
+    echo '</div>';
+}
+
+/** 1行の進捗文。JS側でも同じ形に組み立てる。 */
+function hb_required_plugins_progress_text(array $p): string
+{
+    if (empty($p['pending'])) {
+        return sprintf('%d / %d 完了', (int) $p['done'], (int) $p['total']);
+    }
+
+    return sprintf(
+        '%d / %d 完了 ・ 導入中: %s ・ 残り: %s',
+        (int) $p['done'],
+        (int) $p['total'],
+        $p['pending'][0],
+        implode(', ', array_slice($p['pending'], 1)) ?: 'なし'
     );
+}
+
+/**
+ * 進捗を自動で更新する小さなスクリプト。
+ * ビルドを増やしたくないので、依存なしの素のJSをそのまま出す。
+ */
+function hb_required_plugins_progress_script(): void
+{
+    if (!current_user_can('install_plugins')) {
+        return;
+    }
+
+    $p = hb_required_plugins_progress();
+
+    if (empty($p['pending'])) {
+        return;
+    }
+
+    wp_register_script('hb-install-progress', false, [], HB_BASE_VERSION, true);
+    wp_enqueue_script('hb-install-progress');
+
+    $data = [
+        'url'   => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('hb_install_step'),
+    ];
+
+    wp_add_inline_script('hb-install-progress', '(' . hb_required_plugins_progress_js() . ')(' . wp_json_encode($data) . ');');
+}
+
+function hb_required_plugins_progress_js(): string
+{
+    return <<<'JS'
+function (cfg) {
+  var box = document.getElementById('hb-install-progress');
+  if (!box) { return; }
+  var line = box.querySelector('.hb-install-line');
+
+  function step() {
+    var body = new URLSearchParams({ action: 'hb_install_step', nonce: cfg.nonce });
+
+    fetch(cfg.url, { method: 'POST', body: body, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.success) { line.textContent = '進捗を取得できませんでした。画面を再読み込みしてください。'; return; }
+
+        var d = res.data;
+        line.textContent = d.text;
+
+        if (d.pending.length) { setTimeout(step, 600); return; }
+
+        // 全部そろったら、増えたメニューを出すために一度だけ読み直す。
+        box.className = 'notice notice-success';
+        line.textContent = d.text + ' ・ 画面を更新します…';
+        setTimeout(function () { location.reload(); }, 1200);
+      })
+      .catch(function () {
+        line.textContent = '通信に失敗しました。時間をおいて画面を再読み込みしてください。';
+      });
+  }
+
+  step();
+}
+JS;
+}
+
+/**
+ * 1回呼ばれるごとに1本だけ入れて、いまの進捗を返す。
+ *
+ * 同時に走らないよう鍵をかける。タブを2つ開かれると
+ * 同じプラグインを二重に展開してしまうため。
+ */
+function hb_required_plugins_ajax_step(): void
+{
+    check_ajax_referer('hb_install_step', 'nonce');
+
+    if (!current_user_can('install_plugins')) {
+        wp_send_json_error();
+    }
+
+    $pending = hb_required_plugins_pending();
+
+    if (!empty($pending) && !get_transient(HB_INSTALL_LOCK)) {
+        set_transient(HB_INSTALL_LOCK, 1, 2 * MINUTE_IN_SECONDS);
+
+        $slug   = $pending[0];
+        $result = hb_required_plugins_install_now($slug);
+        $fails  = hb_required_plugins_fails();
+
+        if (is_wp_error($result)) {
+            $fails[$slug]         = ($fails[$slug] ?? 0) + 1;
+            $fails['_last_error'] = $slug . ': ' . $result->get_error_message();
+        } else {
+            unset($fails[$slug]);
+        }
+
+        update_option(HB_INSTALL_FAILS, $fails, false);
+        delete_transient(HB_INSTALL_LOCK);
+    }
+
+    $p = hb_required_plugins_progress();
+
+    wp_send_json_success([
+        'done'    => $p['done'],
+        'total'   => $p['total'],
+        'pending' => $p['pending'],
+        'stuck'   => $p['stuck'],
+        'text'    => hb_required_plugins_progress_text($p)
+            . (empty($p['stuck']) ? '' : ' ・ 失敗: ' . implode(', ', $p['stuck']) . '（' . $p['error'] . '）'),
+    ]);
 }
