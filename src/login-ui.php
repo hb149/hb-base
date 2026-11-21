@@ -127,8 +127,13 @@ function hb_login_ui_layout_css(): string
     padding-right: 46px;
 }
 
-/* ---- 人間確認（Turnstile） ---- */
+/* ---- 人間確認（Turnstile） ----
+   ウィジェットは幅が固定で、放っておくと左に寄る。
+   列方向のflexで中央に置く（テストキー使用時に出る注意書きも一緒に中央へ）。 */
 .login .cf-turnstile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     margin: 0 0 20px;
     min-height: 65px;     /* 読み込み前に下の要素が飛び跳ねないよう場所を取っておく */
 }
