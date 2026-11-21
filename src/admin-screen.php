@@ -182,6 +182,14 @@ function hb_admin_screen_handle_actions(): void
             }
             break;
 
+        case 'invite-restore':
+            $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
+            if ($id !== '') {
+                hb_device_invite_restore($id);
+                $notice = 'invite-restored';
+            }
+            break;
+
         case 'invite-revoke':
             $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
             if ($id !== '') {
@@ -377,6 +385,7 @@ function hb_admin_screen_notice(): void
         'invite-mailed'    => '招待リンクを発行し、メールを送信しました。',
         'invite-revoked'   => '招待リンクを取り消しました。',
         'invite-deleted'   => '招待の記録を削除しました。',
+        'invite-restored'  => '招待リンクを有効に戻しました。相手の手元にあるURLがそのまま使えます。',
         'log-cleared'      => '記録を消去しました。',
         'plugin-installed' => 'プラグインを導入しました。',
         'plugin-restored'  => '自動有効化の対象に戻しました。次に管理画面を開いたときに有効化されます。',
@@ -522,8 +531,9 @@ function hb_admin_screen_invite_list(): void
     });
 
     $states = [
-        'open'    => '未使用',
+        'open'    => '有効',
         'used'    => '使用済み',
+        'revoked' => '取り消し済み',
         'expired' => '期限切れ',
     ];
 
@@ -546,7 +556,15 @@ function hb_admin_screen_invite_list(): void
             ? '<code>' . esc_html((string) $invite['device']) . '</code>'
             : '—');
 
-        $actions = $state === 'open' ? ['invite-revoke' => '取り消す'] : [];
+        if ($state === 'open') {
+            $actions = ['invite-revoke' => '取り消す'];
+        } elseif ($state === 'used') {
+            // 使ったリンクは戻さない。1回限りという約束を崩さないため。
+            $actions = [];
+        } else {
+            $actions = ['invite-restore' => '有効に戻す'];
+        }
+
         $actions['invite-delete'] = ['label' => '削除', 'confirm' => 'この招待の記録を削除します。よろしいですか。'];
 
         echo '<td>';

@@ -280,6 +280,7 @@ function hb_device_invite_create(string $label, string $email = '', int $ttl = 1
         'label'   => mb_substr($label, 0, 60),
         'email'   => sanitize_email($email),
         'created' => $now,
+        'ttl'     => max(300, $ttl),
         'expires' => $now + max(300, $ttl),
         'by'      => get_current_user_id(),
         'used'    => 0,
@@ -364,11 +365,35 @@ function hb_device_invite_revoke(string $id): void
 {
     $invites = hb_device_invites_all();
 
-    if (!isset($invites[$id])) {
+    if (!isset($invites[$id]) || !empty($invites[$id]['used'])) {
         return;
     }
 
+    $invites[$id]['revoked'] = time();
     $invites[$id]['expires'] = time() - 1;
+
+    hb_device_invites_save($invites);
+}
+
+/**
+ * 取り消した（または期限切れの）リンクを、もう一度使えるようにする。
+ *
+ * 合言葉は変わらないので、相手の手元にあるURLがそのまま生き返る。
+ * 発行し直すとURLが変わり、送り直しが要る。間違えて取り消したときはこちら。
+ *
+ * すでに使われたものは戻さない。1回限りという約束を崩さないため。
+ */
+function hb_device_invite_restore(string $id): void
+{
+    $invites = hb_device_invites_all();
+
+    if (!isset($invites[$id]) || !empty($invites[$id]['used'])) {
+        return;
+    }
+
+    unset($invites[$id]['revoked']);
+
+    $invites[$id]['expires'] = time() + (int) ($invites[$id]['ttl'] ?? DAY_IN_SECONDS);
 
     hb_device_invites_save($invites);
 }
@@ -383,11 +408,15 @@ function hb_device_invite_delete(string $id): void
     hb_device_invites_save($invites);
 }
 
-/** 未使用・未期限切れ・取り消し済みのどれか。 */
+/** 未使用 / 使用済み / 取り消し済み / 期限切れ のどれか。 */
 function hb_device_invite_state(array $invite): string
 {
     if (!empty($invite['used'])) {
         return 'used';
+    }
+
+    if (!empty($invite['revoked'])) {
+        return 'revoked';
     }
 
     return $invite['expires'] < time() ? 'expired' : 'open';
