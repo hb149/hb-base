@@ -24,6 +24,27 @@ function hb_passkey_admin_init(): void
     // プロフィール画面の節見出し。プラグイン本体は優先度1で出力するので、その手前に差す。
     add_action('show_user_profile', 'hb_passkey_profile_heading', 0);
     add_action('edit_user_profile', 'hb_passkey_profile_heading', 0);
+
+    add_action('admin_enqueue_scripts', 'hb_passkey_profile_style');
+}
+
+/**
+ * 見出しと表のあいだに空く隙間を詰める。
+ *
+ * プロフィール画面の他の節は「見出しの直後が表」なので、
+ * 管理画面のCSSが表の上余白を0にしている。
+ * ところがこのプラグインは表を <div> 2枚で包んでいるため隣接と見なされず、
+ * 表の既定の margin-top: 7px がそのまま残って下にずれる。
+ *
+ * ACFの設定では直せない種類のずれなので、ここだけCSSで詰める。宣言は1つに留める。
+ */
+function hb_passkey_profile_style(string $hook): void
+{
+    if (!in_array($hook, ['profile.php', 'user-edit.php'], true)) {
+        return;
+    }
+
+    wp_add_inline_style('wp-admin', 'table.form-table.secure-passkeys{margin-top:0}');
 }
 
 /**
