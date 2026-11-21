@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: HB ベース
- * Description: WordPress案件で共通して使う土台。パスキーの日本語化・Cloudflare Turnstile・管理画面のアクセス制限（固定IP＋端末許可）。設定は wp-config.php の定数で行う。
+ * Description: WordPress案件で共通して使う土台。パスキーとACF Extendedの日本語化・Cloudflare Turnstile・管理画面のアクセス制限（固定IP＋端末許可）。設定は wp-config.php の定数で行う。
  * Version:     1.0.0
  * Update URI:  https://github.com/hb149/hb-base
  * Requires at least: 6.0
@@ -40,6 +40,7 @@ require_once __DIR__ . '/src/device.php';
 require_once __DIR__ . '/src/admin-guard.php';
 require_once __DIR__ . '/src/turnstile.php';
 require_once __DIR__ . '/src/passkey-ja.php';
+require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/updater.php';
 require_once __DIR__ . '/src/admin-screen.php';
 
@@ -64,6 +65,9 @@ function hb_base_boot(): void
 {
     if (hb_base_module_enabled('passkey_ja')) {
         hb_passkey_ja_init();
+    }
+    if (hb_base_module_enabled('acfe_ja')) {
+        hb_acfe_ja_init();
     }
     if (hb_base_module_enabled('admin_guard')) {
         hb_admin_guard_init();
