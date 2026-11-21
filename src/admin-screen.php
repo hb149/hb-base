@@ -17,59 +17,161 @@ function hb_admin_screen_init(): void
     add_action('admin_menu', 'hb_admin_screen_menu');
     add_action('admin_init', 'hb_admin_screen_handle_actions');
     add_action('admin_notices', 'hb_admin_screen_pending_notice');
+    add_action('admin_enqueue_scripts', 'hb_admin_screen_script');
+    add_action('wp_ajax_hb_row_action', 'hb_admin_screen_ajax');
+}
+
+/* ---------------------------------------------------------------------------
+ * その場で反映する（AJAX）
+ *
+ * 行の操作のたびに画面全体を読み直すと、どこを押したのか見失う。
+ * 押した行だけ差し替える。
+ *
+ * 行のHTMLはPHPが返す。JS側で状態からラベルを組み立てると、
+ * 同じ判断が2か所に分かれて必ずずれる。
+ *
+ * JSが動かない環境では、ボタンは普通のフォーム送信として働く。
+ * -------------------------------------------------------------------------*/
+
+function hb_admin_screen_script(string $hook): void
+{
+    if ($hook !== 'settings_page_hb-base') {
+        return;
+    }
+
+    wp_register_script('hb-admin-screen', false, [], HB_BASE_VERSION, true);
+    wp_enqueue_script('hb-admin-screen');
+
+    $data = [
+        'url'   => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('hb_row_action'),
+    ];
+
+    wp_add_inline_script(
+        'hb-admin-screen',
+        '(' . hb_admin_screen_js() . ')(' . wp_json_encode($data) . ');'
+    );
+}
+
+function hb_admin_screen_js(): string
+{
+    return <<<'JS'
+function (cfg) {
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('button[data-hb-ajax]');
+    if (!button) { return; }
+
+    var form = button.closest('form');
+    var row  = button.closest('tr[data-hb-row]');
+    if (!form || !row) { return; }
+
+    var confirmText = button.getAttribute('data-hb-confirm');
+    if (confirmText && !window.confirm(confirmText)) { event.preventDefault(); return; }
+
+    event.preventDefault();
+
+    var body = new FormData(form);
+    body.append('action', 'hb_row_action');
+    body.append('nonce', cfg.nonce);
+    body.append('hb_action', button.value);
+    body.append('hb_row', row.getAttribute('data-hb-row'));
+
+    row.style.opacity = '.5';
+    form.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+
+    fetch(cfg.url, { method: 'POST', body: body, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.success) { form.submit(); return; }
+
+        if (res.data.row) {
+          row.outerHTML = res.data.row;
+        } else {
+          row.remove();
+        }
+
+        if (res.data.message) { hbNotice(res.data.message, res.data.type || 'success'); }
+      })
+      .catch(function () { form.submit(); });
+  });
+
+  // 画面上部に出す。WordPressの通知と同じ見た目になる。
+  function hbNotice(text, type) {
+    var wrap = document.querySelector('.wrap');
+    var h1   = wrap ? wrap.querySelector('h1') : null;
+    if (!h1) { return; }
+
+    var old = wrap.querySelector('.hb-ajax-notice');
+    if (old) { old.remove(); }
+
+    var box = document.createElement('div');
+    box.className = 'notice notice-' + type + ' is-dismissible hb-ajax-notice';
+    box.innerHTML = '<p></p>';
+    box.querySelector('p').textContent = text;
+    h1.insertAdjacentElement('afterend', box);
+  }
+}
+JS;
+}
+
+/** 行の操作をその場で処理して、差し替えるHTMLを返す。 */
+function hb_admin_screen_ajax(): void
+{
+    check_ajax_referer('hb_row_action', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error();
+    }
+
+    $action = sanitize_key((string) wp_unslash($_POST['hb_action'] ?? ''));
+    $notice = hb_admin_screen_do_action($action);
+    $row    = sanitize_text_field((string) wp_unslash($_POST['hb_row'] ?? ''));
+
+    wp_send_json_success([
+        'row'     => hb_admin_screen_rebuild_row($row),
+        'message' => hb_admin_screen_message($notice),
+        'type'    => strpos($notice, 'failed') !== false ? 'error' : 'success',
+    ]);
+}
+
+/**
+ * 差し替える行のHTML。対象が消えていれば空文字（＝行ごと消す）。
+ */
+function hb_admin_screen_rebuild_row(string $row): string
+{
+    if (strpos($row, 'device-') === 0) {
+        $id     = substr($row, strlen('device-'));
+        $device = hb_device_get($id);
+
+        return $device === null ? '' : hb_admin_screen_device_row($id, $device);
+    }
+
+    if (strpos($row, 'invite-') === 0) {
+        $id      = substr($row, strlen('invite-'));
+        $invites = hb_device_invites_all();
+
+        return isset($invites[$id]) ? hb_admin_screen_invite_row($id, $invites[$id]) : '';
+    }
+
+    if (strpos($row, 'plugin-') === 0) {
+        $slug   = substr($row, strlen('plugin-'));
+        $status = hb_required_plugins_status();
+
+        return isset($status[$slug]) ? hb_admin_screen_plugin_row($slug, $status[$slug]) : '';
+    }
+
+    return '';
 }
 
 function hb_admin_screen_menu(): void
 {
-    $hook = add_options_page(
+    add_options_page(
         'HBベース',
         'HBベース',
         'manage_options',
         'hb-base',
         'hb_admin_screen_render'
     );
-
-    // メタボックスの登録は画面が決まってから。
-    add_action('load-' . $hook, 'hb_admin_screen_boxes');
-}
-
-/**
- * 節をメタボックスとして登録する。
- *
- * postbox のHTMLを自分で書くと、折りたたみも並べ替えも表示オプションも
- * 付いてこない。WordPress の仕組みに乗せれば全部ついてくる。
- */
-function hb_admin_screen_boxes(): void
-{
-    $screen = get_current_screen();
-
-    if (!$screen) {
-        return;
-    }
-
-    $boxes = [
-        'hb-status'  => ['状態', 'hb_admin_screen_status'],
-        'hb-devices' => ['端末の許可', 'hb_admin_screen_devices'],
-    ];
-
-    if (current_user_can('install_plugins')) {
-        $boxes['hb-plugins'] = ['標準プラグイン', 'hb_admin_screen_plugins'];
-    }
-
-    // 記録が無いうちは箱だけ並んでも仕方がないので出さない。
-    $log = get_option(HB_GUARD_LOG_OPTION, []);
-
-    if (is_array($log) && !empty($log)) {
-        $boxes['hb-log'] = ['遮断した要求', 'hb_admin_screen_guard_log'];
-    }
-
-    foreach ($boxes as $id => [$title, $callback]) {
-        add_meta_box($id, $title, $callback, $screen, 'normal');
-    }
-
-    // 折りたたみの開閉を覚えさせる。
-    add_screen_option('layout_columns', ['max' => 1, 'default' => 1]);
-    wp_enqueue_script('postbox');
 }
 
 /** 承認待ちがあることを全管理画面で知らせる。見落とすとクライアントが入れないままになる。 */
@@ -117,13 +219,34 @@ function hb_admin_screen_devices_by_status(string $status): array
 
 function hb_admin_screen_handle_actions(): void
 {
+    // admin_init は admin-ajax.php でも走る。
+    // ここで処理してリダイレクトすると、AJAXの応答がJSONでなくなる。
+    if (wp_doing_ajax()) {
+        return;
+    }
+
     if (!isset($_POST['hb_action']) || !current_user_can('manage_options')) {
         return;
     }
 
     check_admin_referer('hb_base_action');
 
-    $action = sanitize_key((string) wp_unslash($_POST['hb_action']));
+    $notice = hb_admin_screen_do_action(sanitize_key((string) wp_unslash($_POST['hb_action'])));
+
+    wp_safe_redirect(add_query_arg('hb_notice', $notice, admin_url('options-general.php?page=hb-base')));
+    exit;
+}
+
+/**
+ * 操作の実処理。
+ *
+ * 画面からのPOSTと、行だけ差し替えるAJAXの両方から呼ぶ。
+ * どちらも同じ道を通るので、片方だけ挙動がずれることがない。
+ *
+ * @return string 通知のキー
+ */
+function hb_admin_screen_do_action(string $action): string
+{
     $id     = isset($_POST['hb_id']) ? sanitize_text_field(wp_unslash((string) $_POST['hb_id'])) : '';
     $notice = '';
 
@@ -237,8 +360,7 @@ function hb_admin_screen_handle_actions(): void
             break;
     }
 
-    wp_safe_redirect(add_query_arg('hb_notice', $notice, admin_url('options-general.php?page=hb-base')));
-    exit;
+    return $notice;
 }
 
 /* ---------------------------------------------------------------------------
@@ -262,24 +384,39 @@ function hb_admin_screen_render(): void
         return;
     }
 
-    $screen = get_current_screen();
-
     echo '<div class="wrap">';
     echo '<h1>HBベース</h1>';
 
     hb_admin_screen_notice();
 
-    // メタボックスを置くための器。WordPress の管理画面が前提にしている構造。
-    echo '<div id="poststuff"><div id="post-body" class="metabox-holder columns-1"><div id="postbox-container-1" class="postbox-container">';
+    // 見出し＋form-table。WordPressの設定画面はどれもこの組み方で、
+    // テーマやプラグインが管理画面に手を入れている場合も同じ見た目に揃う。
+    hb_admin_screen_section('状態', 'hb_admin_screen_status');
+    hb_admin_screen_section('端末の許可', 'hb_admin_screen_devices');
 
-    do_meta_boxes($screen, 'normal', null);
+    if (current_user_can('install_plugins')) {
+        hb_admin_screen_section('標準プラグイン', 'hb_admin_screen_plugins');
+    }
 
-    echo '</div></div><br class="clear"></div>';
-
-    wp_nonce_field('closedpostboxes', 'closedpostboxesnonce', false);
-    wp_nonce_field('meta-box-order', 'meta-box-order-nonce', false);
+    hb_admin_screen_section('遮断した要求', 'hb_admin_screen_guard_log');
 
     echo '</div>';
+}
+
+/** 中身が何も出ない節は見出しごと出さない。 */
+function hb_admin_screen_section(string $title, callable $render): void
+{
+    ob_start();
+    $render();
+    $inside = (string) ob_get_clean();
+
+    if (trim($inside) === '') {
+        return;
+    }
+
+    printf('<h2>%s</h2>', esc_html($title));
+
+    echo $inside; // 各描画関数でエスケープ済み
 }
 
 /* --- 状態 ------------------------------------------------------------- */
@@ -377,7 +514,31 @@ function hb_admin_screen_notice(): void
         return;
     }
 
-    $messages = [
+    $messages = hb_admin_screen_messages();
+
+    if (isset($messages[$key])) {
+        printf('<div class="notice notice-success is-dismissible"><p>%s</p></div>', esc_html($messages[$key]));
+    }
+}
+
+/** 通知のキーから本文を引く。AJAXでも使う。 */
+function hb_admin_screen_message(string $key): string
+{
+    $messages = hb_admin_screen_messages();
+
+    if ($key === 'plugin-failed') {
+        $error = get_transient('hb_plugin_error_' . get_current_user_id());
+        delete_transient('hb_plugin_error_' . get_current_user_id());
+
+        return '導入に失敗しました。' . (is_string($error) ? $error : '');
+    }
+
+    return $messages[$key] ?? '';
+}
+
+function hb_admin_screen_messages(): array
+{
+    return [
         'device-approved'  => 'この端末を許可しました。',
         'device-revoked'   => '許可を取り消しました。',
         'device-deleted'   => '記録を削除しました。',
@@ -423,8 +584,16 @@ function hb_admin_screen_devices(): void
     echo '<th scope="col">IP</th><th scope="col">ブラウザ</th><th scope="col">日時</th><th scope="col">操作</th>';
     echo '</tr></thead><tbody>';
 
-    // 操作は「いまの状態をどう変えるか」で書く。
-    // プラグイン一覧の「自動更新を有効化／無効化」と同じ考え方。
+    foreach ($devices as $id => $device) {
+        echo hb_admin_screen_device_row($id, $device);
+    }
+
+    echo '</tbody></table>';
+}
+
+/** 端末の1行。画面の描画とAJAXの差し替えで同じものを使う。 */
+function hb_admin_screen_device_row(string $id, array $device): string
+{
     $delete = ['delete' => ['label' => '削除', 'confirm' => 'この端末の記録を削除します。よろしいですか。']];
 
     $states = [
@@ -433,36 +602,34 @@ function hb_admin_screen_devices(): void
         'pending' => ['承認待ち', ['approve' => '有効にする'] + $delete],
     ];
 
-    foreach ($devices as $id => $device) {
-        $state = (string) ($device['status'] ?? '');
+    $state = (string) ($device['status'] ?? '');
 
-        if (!isset($states[$state])) {
-            continue;
-        }
-
-        [$label, $actions] = $states[$state];
-        $when = (int) ($device['approved'] ?? $device['requested'] ?? $device['created'] ?? 0);
-
-        echo '<tr>';
-        printf('<td>%s</td>', esc_html($label));
-        printf('<td><code>%s</code></td>', esc_html(substr($id, 0, 8)));
-        printf(
-            '<td>%s%s</td>',
-            esc_html((string) ($device['label'] ?? '')) ?: '—',
-            ($device['note'] ?? '') !== ''
-                ? '<br><span class="description">' . esc_html((string) $device['note']) . '</span>'
-                : ''
-        );
-        printf('<td><code>%s</code></td>', esc_html((string) ($device['ip'] ?? '')));
-        printf('<td><span class="description">%s</span></td>', esc_html(mb_substr((string) ($device['ua'] ?? ''), 0, 60)));
-        printf('<td>%s</td>', $when ? esc_html(wp_date('Y-m-d H:i', $when)) : '—');
-
-        echo '<td>';
-        hb_admin_screen_row_actions($actions, 'hb_id', $id);
-        echo '</td></tr>';
+    if (!isset($states[$state])) {
+        return '';
     }
 
-    echo '</tbody></table>';
+    [$label, $actions] = $states[$state];
+    $when = (int) ($device['approved'] ?? $device['requested'] ?? $device['created'] ?? 0);
+
+    $html  = sprintf('<tr data-hb-row="device-%s">', esc_attr($id));
+    $html .= sprintf('<td>%s</td>', esc_html($label));
+    $html .= sprintf('<td><code>%s</code></td>', esc_html(substr($id, 0, 8)));
+    $html .= sprintf(
+        '<td>%s%s</td>',
+        esc_html((string) ($device['label'] ?? '')) ?: '—',
+        ($device['note'] ?? '') !== ''
+            ? '<br><span class="description">' . esc_html((string) $device['note']) . '</span>'
+            : ''
+    );
+    $html .= sprintf('<td><code>%s</code></td>', esc_html((string) ($device['ip'] ?? '')));
+    $html .= sprintf('<td><span class="description">%s</span></td>', esc_html(mb_substr((string) ($device['ua'] ?? ''), 0, 60)));
+    $html .= sprintf('<td>%s</td>', $when ? esc_html(wp_date('Y-m-d H:i', $when)) : '—');
+
+    ob_start();
+    hb_admin_screen_row_actions($actions, 'hb_id', $id);
+    $html .= '<td>' . ob_get_clean() . '</td></tr>';
+
+    return $html;
 }
 
 function hb_admin_screen_invite_box($url): void
@@ -530,13 +697,6 @@ function hb_admin_screen_invite_list(): void
         return ($b['created'] ?? 0) <=> ($a['created'] ?? 0);
     });
 
-    $states = [
-        'open'    => '有効',
-        'used'    => '使用済み',
-        'revoked' => '取り消し済み',
-        'expired' => '期限切れ',
-    ];
-
     echo '<h3>発行済みの招待リンク</h3>';
     echo '<table class="wp-list-table widefat striped"><thead><tr>';
     echo '<th scope="col">状態</th><th scope="col">宛名</th><th scope="col">送り先</th>';
@@ -544,10 +704,28 @@ function hb_admin_screen_invite_list(): void
     echo '</tr></thead><tbody>';
 
     foreach ($invites as $id => $invite) {
-        $state = hb_device_invite_state($invite);
+        echo hb_admin_screen_invite_row($id, $invite);
+    }
 
-        echo '<tr>';
-        printf('<td>%s</td>', esc_html($states[$state]));
+    echo '</tbody></table>';
+}
+
+/** 招待リンクの1行。 */
+function hb_admin_screen_invite_row(string $id, array $invite): string
+{
+    $states = [
+        'open'    => '有効',
+        'used'    => '使用済み',
+        'revoked' => '取り消し済み',
+        'expired' => '期限切れ',
+    ];
+
+    $state = hb_device_invite_state($invite);
+
+    ob_start();
+
+    echo sprintf('<tr data-hb-row="invite-%s">', esc_attr($id));
+    printf('<td>%s</td>', esc_html($states[$state]));
         printf('<td>%s</td>', esc_html((string) ($invite['label'] ?? '')) ?: '—');
         printf('<td>%s</td>', esc_html((string) ($invite['email'] ?? '')) ?: '—');
         printf('<td>%s</td>', esc_html(wp_date('n/j H:i', (int) $invite['created'])));
@@ -570,9 +748,8 @@ function hb_admin_screen_invite_list(): void
         echo '<td>';
         hb_admin_screen_row_actions($actions, 'hb_id', $id);
         echo '</td></tr>';
-    }
 
-    echo '</tbody></table>';
+    return (string) ob_get_clean();
 }
 
 /**
@@ -601,10 +778,12 @@ function hb_admin_screen_row_actions(array $actions, string $field, string $valu
         $confirm = is_array($spec) ? (string) ($spec['confirm'] ?? '') : '';
 
         printf(
-            '<button type="submit" name="hb_action" value="%s" class="button"%s>%s</button> ',
+            '<button type="submit" name="hb_action" value="%s" class="button"%s%s>%s</button> ',
             esc_attr($action),
-            // 取り返しのつかない操作だけ一度止める。コアも削除系で同じやり方をしている。
-            $confirm !== '' ? ' onclick="return confirm(' . esc_attr(wp_json_encode($confirm)) . ')"' : '',
+            // 取り返しのつかない操作だけ一度止める。
+            $confirm !== '' ? ' data-hb-confirm="' . esc_attr($confirm) . '"' : '',
+            // JSが動く環境ではその場で反映する。動かなければ通常の送信になる。
+            ' data-hb-ajax="1"',
             esc_html($label)
         );
     }
@@ -632,32 +811,7 @@ function hb_admin_screen_plugins(): void
     echo '</tr></thead><tbody>';
 
     foreach ($status as $slug => $info) {
-        $excluded = in_array($slug, $optout, true);
-
-        $labels = [
-            'active'   => '有効',
-            'inactive' => $excluded ? '停止中（自動有効化の対象外）' : '停止中',
-            'missing'  => '未導入',
-        ];
-
-        echo '<tr>';
-        printf('<td>%s</td>', esc_html($info['name']));
-        printf('<td><code>%s</code></td>', esc_html($slug));
-        printf('<td>%s</td>', esc_html($labels[$info['state']]));
-
-        if ($info['state'] === 'missing') {
-            $actions = ['install-plugin' => 'いますぐ導入'];
-        } elseif ($excluded) {
-            $actions = ['restore-plugin' => '自動有効化に戻す'];
-        } elseif ($info['state'] === 'inactive') {
-            $actions = ['install-plugin' => '有効化'];
-        } else {
-            $actions = [];
-        }
-
-        echo '<td>';
-        hb_admin_screen_row_actions($actions, 'hb_slug', $slug);
-        echo '</td></tr>';
+        echo hb_admin_screen_plugin_row($slug, $info);
     }
 
     echo '</tbody></table>';
@@ -672,6 +826,40 @@ function hb_admin_screen_plugins(): void
 
     echo '<p class="description">一覧は <code>HB_REQUIRED_PLUGINS</code> で差し替えられます。'
         . 'WordPress.org にあるものだけが対象です（ACF PRO などの有料プラグインは扱えません）。</p>';
+}
+
+/** 標準プラグインの1行。 */
+function hb_admin_screen_plugin_row(string $slug, array $info): string
+{
+    $excluded = in_array($slug, hb_required_plugins_optout(), true);
+
+    $labels = [
+        'active'   => '有効',
+        'inactive' => $excluded ? '停止中（自動有効化の対象外）' : '停止中',
+        'missing'  => '未導入',
+    ];
+
+    if ($info['state'] === 'missing') {
+        $actions = ['install-plugin' => 'いますぐ導入'];
+    } elseif ($excluded) {
+        $actions = ['restore-plugin' => '自動有効化に戻す'];
+    } elseif ($info['state'] === 'inactive') {
+        $actions = ['install-plugin' => '有効化'];
+    } else {
+        $actions = [];
+    }
+
+    ob_start();
+
+    printf('<tr data-hb-row="plugin-%s">', esc_attr($slug));
+    printf('<td>%s</td>', esc_html($info['name']));
+    printf('<td><code>%s</code></td>', esc_html($slug));
+    printf('<td>%s</td>', esc_html($labels[$info['state']]));
+    echo '<td>';
+    hb_admin_screen_row_actions($actions, 'hb_slug', $slug);
+    echo '</td></tr>';
+
+    return (string) ob_get_clean();
 }
 
 /* --- 遮断の記録 --------------------------------------------------------- */
