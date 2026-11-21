@@ -134,7 +134,8 @@ function hb_login_ui_layout_css(): string
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin: 0 0 20px;
+    /* 入力欄とは性質が違う要素なので、上は広めに離して区切りを作る。 */
+    margin: 12px 0 24px;
     min-height: 65px;     /* 読み込み前に下の要素が飛び跳ねないよう場所を取っておく */
 }
 .login .cf-turnstile iframe {

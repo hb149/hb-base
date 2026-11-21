@@ -83,8 +83,8 @@ define('HB_TURNSTILE_FORMS', 'login, lostpassword');
 
 /* ---- ログインURL ---- */
 
-// 未設定なら wp-login.php のまま。https://example.com/office/ がログイン画面になる
-define('HB_LOGIN_SLUG', 'office');
+// 未設定なら wp-login.php のまま。全案件で同じ値にする
+define('HB_LOGIN_SLUG', 'hb-desk-login');
 
 /* ---- ログイン画面 ---- */
 
@@ -194,6 +194,13 @@ Cloudflare に問い合わせできなかったときは、本番は止め、ロ
 ## ログインURL
 
 `HB_LOGIN_SLUG` を書くと、ログイン画面が `https://example.com/<slug>/` に移る。
+**全案件で同じ値を使う**（入口をそろえるのが目的なので、案件ごとに変えない）。
+
+スラッグを決めるときは、攻撃ツールの辞書に載っている語（login, admin, signin,
+secure, dashboard, backend, panel, cms, manage）と、クライアントのページ名に
+なりうる語（contact, about, company, access, staff, news, works）を避ける。
+数字だけの値も避けること。パーマリンクに `%year%` を含む設定だと
+年別アーカイブとして解釈されることがある。
 
 | | |
 |---|---|
