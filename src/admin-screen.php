@@ -248,7 +248,12 @@ function hb_admin_screen_handle_actions(): void
 
     $notice = hb_admin_screen_do_action(sanitize_key((string) wp_unslash($_POST['hb_action'] ?? '')));
 
-    wp_safe_redirect(add_query_arg('hb_notice', $notice, admin_url('options-general.php?page=hb-base')));
+    $tab = isset($_POST['hb_tab']) ? sanitize_key(wp_unslash($_POST['hb_tab'])) : '';
+
+    wp_safe_redirect(add_query_arg(
+        array_filter(['page' => 'hb-base', 'tab' => $tab, 'hb_notice' => $notice]),
+        admin_url('options-general.php')
+    ));
     exit;
 }
 
@@ -269,6 +274,9 @@ function hb_admin_screen_do_action(string $action): string
     if ($action === '' && isset($_POST['hb_row_action'])) {
         [$action, $id] = hb_admin_screen_parse_row_action((string) wp_unslash($_POST['hb_row_action']));
     }
+
+    // プラグインの行は対象がスラッグ。どちらの経路でも同じ変数で受ける。
+    $slug = isset($_POST['hb_slug']) ? sanitize_key(wp_unslash((string) $_POST['hb_slug'])) : sanitize_key($id);
 
     switch ($action) {
         case 'approve':
@@ -318,7 +326,6 @@ function hb_admin_screen_do_action(string $action): string
             break;
 
         case 'invite-delete':
-            $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
             if ($id !== '') {
                 hb_device_invite_delete($id);
                 $notice = 'invite-deleted';
@@ -326,7 +333,6 @@ function hb_admin_screen_do_action(string $action): string
             break;
 
         case 'invite-restore':
-            $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
             if ($id !== '') {
                 hb_device_invite_restore($id);
                 $notice = 'invite-restored';
@@ -334,7 +340,6 @@ function hb_admin_screen_do_action(string $action): string
             break;
 
         case 'invite-revoke':
-            $id = isset($_POST['hb_id']) ? sanitize_key(wp_unslash($_POST['hb_id'])) : '';
             if ($id !== '') {
                 hb_device_invite_revoke($id);
                 $notice = 'invite-revoked';
@@ -342,7 +347,6 @@ function hb_admin_screen_do_action(string $action): string
             break;
 
         case 'install-plugin':
-            $slug   = isset($_POST['hb_slug']) ? sanitize_key(wp_unslash($_POST['hb_slug'])) : '';
             $result = hb_required_plugins_install($slug);
             $notice = is_wp_error($result) ? 'plugin-failed' : 'plugin-installed';
             if (is_wp_error($result)) {
@@ -367,7 +371,6 @@ function hb_admin_screen_do_action(string $action): string
             break;
 
         case 'restore-plugin':
-            $slug = isset($_POST['hb_slug']) ? sanitize_key(wp_unslash($_POST['hb_slug'])) : '';
             if ($slug !== '') {
                 hb_required_plugins_clear_optout($slug);
                 $notice = 'plugin-restored';
@@ -398,62 +401,78 @@ function hb_admin_screen_do_action(string $action): string
  * 独自のCSSは足さない。コアの見た目が変わっても一緒に追従するため。
  * -------------------------------------------------------------------------*/
 
+/**
+ * タブの一覧。中身が出ないタブは並べない。
+ *
+ * @return array<string, array{0:string,1:callable}>
+ */
+function hb_admin_screen_tabs(): array
+{
+    $tabs = [
+        'status'  => ['状態', 'hb_admin_screen_status'],
+        'devices' => ['端末の許可', 'hb_admin_screen_devices'],
+    ];
+
+    if (current_user_can('install_plugins')) {
+        $tabs['plugins'] = ['標準プラグイン', 'hb_admin_screen_plugins'];
+    }
+
+    $log = get_option(HB_GUARD_LOG_OPTION, []);
+
+    if (is_array($log) && !empty($log)) {
+        $tabs['log'] = ['遮断した要求', 'hb_admin_screen_guard_log'];
+    }
+
+    return $tabs;
+}
+
+/** いま開いているタブ。知らない値が来たら先頭に戻す。 */
+function hb_admin_screen_current_tab(): string
+{
+    $tabs = hb_admin_screen_tabs();
+    $tab  = isset($_GET['tab']) ? sanitize_key(wp_unslash($_GET['tab'])) : '';
+
+    return isset($tabs[$tab]) ? $tab : (string) array_key_first($tabs);
+}
+
 function hb_admin_screen_render(): void
 {
     if (!current_user_can('manage_options')) {
         return;
     }
 
+    $tabs    = hb_admin_screen_tabs();
+    $current = hb_admin_screen_current_tab();
+
     echo '<div class="wrap">';
     echo '<h1>HBベース</h1>';
 
     hb_admin_screen_notice();
 
-    // 中身は1つのフォームに入れる。WordPressの設定画面はどれもこの形で、
-    // 管理画面に手を入れているプラグイン（ACF Extended など）も
-    // 「.wrap の直下の form」を目印に整えるため、同じ見た目に揃う。
+    // WordPress標準のタブ。設定画面で複数の話題を分けるときの定型。
+    echo '<h2 class="nav-tab-wrapper">';
+
+    foreach ($tabs as $key => [$label, $callback]) {
+        printf(
+            '<a href="%s" class="nav-tab%s">%s</a>',
+            esc_url(add_query_arg(['page' => 'hb-base', 'tab' => $key], admin_url('options-general.php'))),
+            $key === $current ? ' nav-tab-active' : '',
+            esc_html($label)
+        );
+    }
+
+    echo '</h2>';
+
     echo '<form method="post">';
     wp_nonce_field('hb_base_action');
 
-    // 見出し＋form-table。
-    hb_admin_screen_section('状態', 'hb_admin_screen_status');
-    hb_admin_screen_section('端末の許可', 'hb_admin_screen_devices');
+    // 操作のあと同じタブに戻れるように持たせる。
+    printf('<input type="hidden" name="hb_tab" value="%s">', esc_attr($current));
 
-    if (current_user_can('install_plugins')) {
-        hb_admin_screen_section('標準プラグイン', 'hb_admin_screen_plugins');
-    }
-
-    hb_admin_screen_section('遮断した要求', 'hb_admin_screen_guard_log');
+    $tabs[$current][1]();
 
     echo '</form>';
     echo '</div>';
-}
-
-/**
- * 節の見出しと中身。
- *
- * <h2> ＋ <table class="form-table"> だけで組む。WordPress の設定画面は
- * どれもこの形なので、同じ見え方になる。
- *
- * 自前のカードは作らない。他のプラグインのスタイルも借りない。
- * 借りると、入っていないサイトで見た目が変わるうえ、
- * 向こうのCSSはあちらのDOMを前提にしているので崩れる（実際に崩れた）。
- *
- * 中身が何も出ない節は見出しごと出さない。
- */
-function hb_admin_screen_section(string $title, callable $render): void
-{
-    ob_start();
-    $render();
-    $inside = (string) ob_get_clean();
-
-    if (trim($inside) === '') {
-        return;
-    }
-
-    printf('<h2>%s</h2>', esc_html($title));
-
-    echo $inside; // 各描画関数でエスケープ済み
 }
 
 /* --- 状態 ------------------------------------------------------------- */
@@ -499,8 +518,7 @@ function hb_admin_screen_status(): void
     );
 
     echo '</tbody></table>';
-    echo '<p class="description">設定値は <code>wp-config.php</code> の定数で変更します。'
-        . 'この画面からは変更できません。</p>';
+    echo '<p>設定値は <code>wp-config.php</code> の定数で変更します。この画面からは変更できません。</p>';
 }
 
 function hb_admin_screen_row(string $label, string $value): void
@@ -598,7 +616,7 @@ function hb_admin_screen_messages(): array
 
 function hb_admin_screen_devices(): void
 {
-    echo '<p class="description">固定IPが無い回線からでも、ここで許可した端末だけは管理画面に入れます。</p>';
+    echo '<p>固定IPが無い回線からでも、ここで許可した端末だけは管理画面に入れます。</p>';
 
     hb_admin_screen_invite_box(get_transient('hb_last_invite_' . get_current_user_id()));
 
@@ -607,7 +625,7 @@ function hb_admin_screen_devices(): void
     echo '<h3>端末の一覧</h3>';
 
     if (empty($devices)) {
-        echo '<p class="description">許可・申請のある端末はまだありません。</p>';
+        echo '<p>許可・申請のある端末はまだありません。</p>';
 
         return;
     }
@@ -672,8 +690,7 @@ function hb_admin_screen_device_row(string $id, array $device): string
 function hb_admin_screen_invite_box($url): void
 {
     echo '<h3>招待リンクを発行する</h3>';
-    echo '<p class="description">発行したURLを、許可したい端末で開いてもらいます。'
-        . '開いた端末だけが許可され、1回使うと無効になります。</p>';
+    echo '<p>発行したURLを、許可したい端末で開いてもらいます。開いた端末だけが許可され、1回使うと無効になります。</p>';
 
     echo '<table class="form-table" role="presentation"><tbody>';
 
@@ -831,7 +848,7 @@ function hb_admin_screen_plugins(): void
     $optout  = hb_required_plugins_optout();
     $missing = array_filter($status, static function ($info) { return $info['state'] === 'missing'; });
 
-    echo '<p class="description">未導入のものは裏で自動的に導入します。'
+    echo '<p>未導入のものは裏で自動的に導入します。'
         . '入っているのに停止しているものは自動で有効化し、クライアントには「停止」リンクを出しません。</p>';
 
     echo '<table class="wp-list-table widefat striped"><thead><tr>';
@@ -851,7 +868,7 @@ function hb_admin_screen_plugins(): void
         );
     }
 
-    echo '<p class="description">一覧は <code>HB_REQUIRED_PLUGINS</code> で差し替えられます。'
+    echo '<p>一覧は <code>HB_REQUIRED_PLUGINS</code> で差し替えられます。'
         . 'WordPress.org にあるものだけが対象です（ACF PRO などの有料プラグインは扱えません）。</p>';
 }
 
@@ -899,7 +916,7 @@ function hb_admin_screen_guard_log(): void
         return;
     }
 
-    echo '<p class="description">様子見モードでは、遮断したはずの要求がここに記録されます。'
+    echo '<p>様子見モードでは、遮断したはずの要求がここに記録されます。'
         . '身内のIPや端末が並んでいないか確認してから有効にしてください。</p>';
 
     echo '<table class="wp-list-table widefat striped"><thead><tr>';
