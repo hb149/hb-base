@@ -35,6 +35,10 @@ function hb_author_archives_init(): void
 
     // サイトマップからも外す。出口が無いのに載っていても意味がない。
     add_filter('wp_sitemaps_add_provider', 'hb_author_archives_sitemap', 10, 2);
+
+    // SEO SIMPLE PACK に同名の設定があり、オフのままなので「効いていない」と
+    // 誤解される。すでに塞いでいることをその画面に書いておく。
+    add_action('admin_notices', 'hb_author_archives_ssp_notice');
 }
 
 function hb_author_archives_block(): void
@@ -58,4 +62,31 @@ function hb_author_archives_block(): void
 function hb_author_archives_sitemap($provider, string $name)
 {
     return $name === 'users' ? false : $provider;
+}
+
+/**
+ * SEO SIMPLE PACK の設定画面に注記を出す。
+ *
+ * 向こうの「『著者』のアーカイブページを使用しない」はオフのままでよい。
+ * 有効にするとトップページへの転送に変わり、こちらの404を上書きしてしまう
+ * （どちらも template_redirect の優先度1なので、どちらが勝つかは読み込み順しだいになる）。
+ */
+function hb_author_archives_ssp_notice(): void
+{
+    $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+
+    if (strpos($page, 'ssp-') !== 0) {
+        return;
+    }
+
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    echo '<div class="notice notice-info"><p>'
+        . '<strong>「著者」のアーカイブページは「HB ベース」がすでに塞いでいます。</strong>'
+        . '<code>/author/…</code> と <code>/?author=1</code> はどちらも 404 を返し、サイトマップにも載りません。<br>'
+        . 'ここのトグルは<strong>オフのままで構いません</strong>。'
+        . '有効にするとトップページへの転送に変わり、検索エンジンから「中身が無いのに200を返すページ」と見なされます。'
+        . '</p></div>';
 }

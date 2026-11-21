@@ -238,28 +238,61 @@ function hb_device_ua(): string
 }
 
 /* ---------------------------------------------------------------------------
- * 招待URL
+ * 招待リンク
+ *
+ * 発行したものを一覧で管理する。誰に・いつまで・使われたかを後から追えないと、
+ * 「渡したはずのリンクが使われていない」を確かめられない。
+ *
+ * ■ URLを保存しない
+ *   記録に残すのは合言葉のハッシュだけ。発行直後の1回しか本文は表示しない。
+ *   DBを覗かれても、そこから管理画面に入れるリンクは復元できない。
+ *   渡し直したいときは作り直す（再発行ボタン）。
  * -------------------------------------------------------------------------*/
 
+const HB_INVITE_OPTION = 'hb_base_invites';
+const HB_INVITE_KEEP   = 30 * DAY_IN_SECONDS;   // 使用済み・期限切れを残しておく期間
+
+/** 選べる有効期限。 */
+function hb_device_invite_durations(): array
+{
+    return [
+        '1800'   => '30分',
+        '10800'  => '3時間',
+        '86400'  => '24時間',
+        '259200' => '3日',
+        '604800' => '7日',
+    ];
+}
+
 /**
- * 1回だけ使える招待トークンを作る。
- * 短命・使い捨てにしてあるので、URLが後から漏れても再利用できない。
+ * 招待を1つ作る。戻り値は本文（URLに載せる合言葉）。
+ * 呼び出し側はこれを一度だけ画面に出すこと。
  */
-function hb_device_invite_create(string $label, int $ttl = 1800): string
+function hb_device_invite_create(string $label, string $email = '', int $ttl = 1800): string
 {
     $token = bin2hex(random_bytes(24));
+    $now   = time();
 
-    set_transient('hb_invite_' . hash('sha256', $token), [
-        'label'   => $label,
-        'issued'  => time(),
+    $invites = hb_device_invites_all();
+
+    $invites[bin2hex(random_bytes(6))] = [
+        'hash'    => hash('sha256', $token),
+        'label'   => mb_substr($label, 0, 60),
+        'email'   => sanitize_email($email),
+        'created' => $now,
+        'expires' => $now + max(300, $ttl),
         'by'      => get_current_user_id(),
-    ], max(300, $ttl));
+        'used'    => 0,
+        'device'  => '',
+    ];
+
+    hb_device_invites_save($invites);
 
     return $token;
 }
 
 /**
- * 招待トークンを使う。成功したらラベルを返し、トークンは消す。
+ * 招待を使う。成立したら記録に「使用済み」を書き、その内容を返す。
  */
 function hb_device_invite_consume(string $token): ?array
 {
@@ -267,20 +300,126 @@ function hb_device_invite_consume(string $token): ?array
         return null;
     }
 
-    $key  = 'hb_invite_' . hash('sha256', $token);
-    $data = get_transient($key);
+    $hash    = hash('sha256', $token);
+    $invites = hb_device_invites_all();
+    $now     = time();
 
-    if (!is_array($data)) {
-        return null;
+    foreach ($invites as $id => $invite) {
+        if (!hash_equals((string) $invite['hash'], $hash)) {
+            continue;
+        }
+
+        if (!empty($invite['used']) || $invite['expires'] < $now) {
+            return null;
+        }
+
+        $invites[$id]['used']   = $now;
+        $invites[$id]['device'] = substr(hb_device_current_id(), 0, 8);
+
+        hb_device_invites_save($invites);
+
+        return $invites[$id];
     }
 
-    delete_transient($key);
+    return null;
+}
 
-    return $data;
+/** 発行済みの一覧。古くなったものはここで片付ける。 */
+function hb_device_invites_all(): array
+{
+    $invites = get_option(HB_INVITE_OPTION, []);
+
+    if (!is_array($invites)) {
+        return [];
+    }
+
+    $now   = time();
+    $fresh = [];
+
+    foreach ($invites as $id => $invite) {
+        if (!is_array($invite) || empty($invite['hash'])) {
+            continue;
+        }
+
+        // 使い終わった／期限が切れたものも、しばらくは履歴として残す。
+        $settled = !empty($invite['used']) || $invite['expires'] < $now;
+
+        if ($settled && ($now - (int) $invite['created']) > HB_INVITE_KEEP) {
+            continue;
+        }
+
+        $fresh[$id] = $invite;
+    }
+
+    return $fresh;
+}
+
+function hb_device_invites_save(array $invites): void
+{
+    update_option(HB_INVITE_OPTION, $invites, false);
+}
+
+/** 発行を取り消す。まだ使われていないリンクを無効にしたいとき。 */
+function hb_device_invite_revoke(string $id): void
+{
+    $invites = hb_device_invites_all();
+
+    if (!isset($invites[$id])) {
+        return;
+    }
+
+    $invites[$id]['expires'] = time() - 1;
+
+    hb_device_invites_save($invites);
+}
+
+/** 未使用・未期限切れ・取り消し済みのどれか。 */
+function hb_device_invite_state(array $invite): string
+{
+    if (!empty($invite['used'])) {
+        return 'used';
+    }
+
+    return $invite['expires'] < time() ? 'expired' : 'open';
 }
 
 /** 招待URL。管理画面以外のURLにしてある（遮断対象の外から開けるように）。 */
 function hb_device_invite_url(string $token): string
 {
     return add_query_arg('hb-device-invite', $token, home_url('/'));
+}
+
+/**
+ * 招待リンクをメールで送る。
+ *
+ * @return bool 送信を試みて成功したか
+ */
+function hb_device_invite_mail(string $email, string $label, string $url, int $expires): bool
+{
+    $email = sanitize_email($email);
+
+    if ($email === '' || !is_email($email)) {
+        return false;
+    }
+
+    $site = wp_specialchars_decode((string) get_option('blogname'));
+
+    $subject = sprintf('[%s] 管理画面へのアクセス用リンク', $site);
+
+    // 宛名は覚書（「山田様 iPhone」など）なので、敬称を足さずそのまま使う。
+    $body = implode("\n", [
+        $site . ' の管理画面に入るためのリンクをお送りします。',
+        '',
+        'このリンクを開いた端末だけが、管理画面を利用できるようになります。',
+        'ふだんお使いの端末・ブラウザで開いてください。',
+        '',
+        $url,
+        '',
+        '有効期限: ' . wp_date('Y年n月j日 H:i', $expires),
+        'このリンクは1回しか使えません。期限が切れた場合は再発行をご依頼ください。',
+        '',
+        '※ このメールに心当たりがない場合は、リンクを開かずに破棄してください。',
+    ]);
+
+    return wp_mail($email, $subject, $body);
 }
