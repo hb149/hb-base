@@ -224,19 +224,42 @@ function hb_admin_screen_render(): void
     echo '<h1>HBベース</h1>';
 
     hb_admin_screen_notice();
-    hb_admin_screen_status();
-    hb_admin_screen_devices();
-    hb_admin_screen_plugins();
-    hb_admin_screen_guard_log();
+
+    // 節ごとにカードで囲む。見出しだけだと、どこからどこまでが
+    // ひとつの話なのか分からなくなる（WordPress標準のpostboxを使う）。
+    hb_admin_screen_card('状態', 'hb_admin_screen_status');
+    hb_admin_screen_card('端末の許可', 'hb_admin_screen_devices');
+    hb_admin_screen_card('標準プラグイン', 'hb_admin_screen_plugins');
+    hb_admin_screen_card('遮断した要求', 'hb_admin_screen_guard_log');
 
     echo '</div>';
+}
+
+/**
+ * 節をカードで囲む。
+ * 中身が何も出なかった節はカードごと出さない（空の箱が並ぶのを避ける）。
+ */
+function hb_admin_screen_card(string $title, callable $render): void
+{
+    ob_start();
+    $render();
+    $inside = (string) ob_get_clean();
+
+    if (trim($inside) === '') {
+        return;
+    }
+
+    printf(
+        '<div class="postbox"><div class="postbox-header"><h2 class="hndle">%s</h2></div><div class="inside">%s</div></div>',
+        esc_html($title),
+        $inside // 各描画関数でエスケープ済み
+    );
 }
 
 /* --- 状態 ------------------------------------------------------------- */
 
 function hb_admin_screen_status(): void
 {
-    echo '<h2>状態</h2>';
     echo '<table class="form-table" role="presentation"><tbody>';
 
     hb_admin_screen_row('バージョン', esc_html(HB_BASE_VERSION));
@@ -349,15 +372,16 @@ function hb_admin_screen_notice(): void
 
 function hb_admin_screen_devices(): void
 {
-    echo '<h2>端末の許可</h2>';
     echo '<p class="description">固定IPが無い回線からでも、ここで許可した端末だけは管理画面に入れます。</p>';
 
     hb_admin_screen_invite_box(get_transient('hb_last_invite_' . get_current_user_id()));
 
     $devices = hb_devices_all();
 
+    echo '<h3>端末の一覧</h3>';
+
     if (empty($devices)) {
-        echo '<p>許可・申請のある端末はまだありません。</p>';
+        echo '<p class="description">許可・申請のある端末はまだありません。</p>';
 
         return;
     }
@@ -552,7 +576,6 @@ function hb_admin_screen_plugins(): void
     $optout  = hb_required_plugins_optout();
     $missing = array_filter($status, static function ($info) { return $info['state'] === 'missing'; });
 
-    echo '<h2>標準プラグイン</h2>';
     echo '<p class="description">未導入のものは裏で自動的に導入します。'
         . '入っているのに停止しているものは自動で有効化し、クライアントには「停止」リンクを出しません。</p>';
 
@@ -621,7 +644,6 @@ function hb_admin_screen_guard_log(): void
         return;
     }
 
-    echo '<h2>遮断した要求</h2>';
     echo '<p class="description">様子見モードでは、遮断したはずの要求がここに記録されます。'
         . '身内のIPや端末が並んでいないか確認してから有効にしてください。</p>';
 
