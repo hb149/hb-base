@@ -2,6 +2,7 @@
 
 WordPress案件で共通して使う土台。1つのリポジトリを直せば、入れている全サイトに更新が配れる。
 
+- **ログイン画面の整形** — 並びと幅だけ整える（色と角丸は WordPress の既定のまま）
 - **パスキーの日本語化** — Secure Passkeys の画面文言を日本語にする
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
 - **管理画面のアクセス制限** — 固定IPと、管理者が許可した端末だけを通す
@@ -79,10 +80,26 @@ define('HB_TURNSTILE_SECRET_KEY', '0x4AAA...');
 // 出すフォーム（既定 login, lostpassword, register）
 define('HB_TURNSTILE_FORMS', 'login, lostpassword');
 
+/* ---- ログイン画面 ---- */
+
+// 既定では色も角丸も変えない。ブランドに寄せたい案件だけ書く
+define('HB_LOGIN_ACCENT', '#1a4f9c');  // ボタンとフォーカス
+define('HB_LOGIN_BG',     '#ffffff');  // 背景
+define('HB_LOGIN_RADIUS', 8);          // 角丸(px)
+define('HB_LOGIN_LOGO',   123);        // ロゴ（URL か添付ID。既定はサイトアイコン）
+define('HB_LOGIN_WIDTH',  380);        // カード幅(px)
+define('HB_LOGIN_STYLE',  false);      // 整形ごと止める
+
+/* ---- Limit Login Attempts の初期設定 ---- */
+
+// 初期値を変えたいキーだけ書く（初回投入より前に）
+define('HB_LLAR_SETTINGS', ['allowed_retries' => 3, 'lockout_duration' => 1800]);
+define('HB_LLAR_MANAGE', false);       // 初期値の投入ごと止める
+
 /* ---- 共通 ---- */
 
 // 動かすモジュールを絞る（既定は全部）
-define('HB_BASE_MODULES', 'passkey_ja, turnstile, admin_guard');
+define('HB_BASE_MODULES', 'passkey_ja, acfe_ja, login_ui, limit_login, turnstile, admin_guard');
 ```
 
 ローカル検証には Cloudflare 公式の「常に成功する」テストキーが使える。
@@ -161,6 +178,41 @@ Cloudflare に問い合わせできなかったときは、本番は止め、ロ
 
 ---
 
+## ログイン画面
+
+並び・幅・余白だけ整える。パスキーとTurnstileを足すとボタンが横に並んで
+散らかるため、ラベルを項目の上に、入力とボタンを全幅に、パスキーは区切り線の下へ。
+
+**色・角丸・影はWordPressの既定のまま。** コアのログイン画面は更新で少しずつ
+変わるので、色を上書きすると追従できずに浮く。既定に乗っているほうが長持ちする。
+ブランドに寄せたい案件だけ、上の定数を書けば色が付く（書かなければ一切出力しない）。
+
+---
+
+## Limit Login Attempts の初期設定
+
+[Limit Login Attempts Reloaded](https://ja.wordpress.org/plugins/limit-login-attempts-reloaded/)
+を有効にしたとき、**未設定のキーにだけ**こちらの値を書き込む。
+案件ごとに設定がばらつくのと、入れ忘れ・緩めっぱなしを防ぐのが目的。
+
+| | 初期値 |
+|---|---|
+| 試行回数 / ロック時間 | 4回で20分 |
+| 長時間ロック | 4回ロックで24時間 |
+| 試行回数のリセット | 24時間 |
+| 接続元の判定 | `HB_TRUSTED_PROXIES` を書いた案件だけ転送ヘッダを見る |
+| 通知 | 3回ロックされたら管理者メールへ |
+| 左メニュー・ツールバー・ダッシュボード | 非表示（設定画面は「設定」の中に残る） |
+
+**固定はしない。** 書き込んだあとは管理画面から自由に変更でき、こちらが
+上書きし直すこともない。すでに値が入っているキーには最初から触れないので、
+運用中のサイトに後から入れても設定は変わらない。
+
+もう一度投入したいときは `wp option delete hb_llar_seeded`
+（このときも、すでに値があるキーは飛ばす）。
+
+---
+
 ## パスキーの日本語化
 
 [Secure Passkeys](https://ja.wordpress.org/plugins/secure-passkeys/) が前提。
@@ -202,6 +254,10 @@ src/device.php       端末の識別と許可
 src/admin-guard.php  /wp-admin と wp-login.php の門番
 src/turnstile.php    Cloudflare Turnstile
 src/passkey-ja.php   Secure Passkeys の日本語化
+src/passkey-admin.php Secure Passkeys の管理画面に見出しを足す
+src/acfe-ja.php      ACF Extended の日本語化
+src/login-ui.php     ログイン画面の整形
+src/limit-login.php  Limit Login Attempts の初期設定
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面

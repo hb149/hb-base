@@ -40,6 +40,7 @@ require_once __DIR__ . '/src/device.php';
 require_once __DIR__ . '/src/admin-guard.php';
 require_once __DIR__ . '/src/turnstile.php';
 require_once __DIR__ . '/src/login-ui.php';
+require_once __DIR__ . '/src/limit-login.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -82,6 +83,9 @@ function hb_base_boot(): void
     }
     if (hb_base_module_enabled('login_ui')) {
         hb_login_ui_init();
+    }
+    if (hb_base_module_enabled('limit_login')) {
+        hb_limit_login_init();
     }
     if (is_admin()) {
         hb_admin_screen_init();
