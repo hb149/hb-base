@@ -31,7 +31,15 @@ jobs:
       - name: zipを作る
         run: |
           mkdir -p build/hb-base
-          rsync -a --exclude='.git' --exclude='.github' --exclude='build' ./ build/hb-base/
+          # docs/ は検査用。zip の中身は各サイトの wp-content/plugins/hb-base/ に展開され、
+          # そこに置いた物はブラウザから直接 GET できる（実測で 200）。
+          # 本番の公開ディレクトリに検査用ファイルを置く理由が無いので除く。
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='build' \
+            --exclude='docs' \
+            ./ build/hb-base/
           cd build && zip -rq hb-base.zip hb-base
 
       - uses: softprops/action-gh-release@v2
