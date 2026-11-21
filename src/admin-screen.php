@@ -196,6 +196,7 @@ function hb_admin_screen_render(): void
             ? '設定済み（' . esc_html(implode(', ', hb_turnstile_forms())) . '）'
             : '<em>未設定</em>'
     );
+    hb_admin_screen_row('自動更新', hb_auto_updates_summary());
     hb_admin_screen_row(
         'パスキー日本語化',
         hb_base_module_enabled('passkey_ja')

@@ -6,6 +6,7 @@ WordPress案件で共通して使う土台。1つのリポジトリを直せば�
 - **ログイン画面の整形** — 並びと幅だけ整える（色と角丸は WordPress の既定のまま）
 - **パスキーの日本語化** — Secure Passkeys の画面文言を日本語にする
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
+- **自動更新を最初から有効化** — WordPress本体・プラグイン・テーマ
 - **標準プラグインのまとめ導入** — 案件ごとに手で入れて回らない
 - **宣伝パネルの抑制** — 「購読してください」「レビューを書いてください」を出さない
 - **管理画面のアクセス制限** — 固定IPと、管理者が許可した端末だけを通す
@@ -111,6 +112,11 @@ define('HB_REQUIRED_PLUGINS', 'limit-login-attempts-reloaded, secure-passkeys, s
 define('HB_AUTO_INSTALL', false);          // 自動ダウンロードをやめる
 define('HB_FORCE_ACTIVATE', false);        // 自動有効化をやめる
 define('HB_LOCK_REQUIRED_PLUGINS', false); // 「停止」リンクを隠さない
+
+/* ---- 自動更新 ---- */
+
+define('HB_AUTO_UPDATES', false);       // 自動更新の設定投入ごと止める
+define('HB_AUTO_UPDATE_CORE', 'major'); // 'minor'(既定) / 'major' / 'off'
 
 /* ---- 標準プラグインの初期設定 ---- */
 
@@ -334,6 +340,30 @@ ACF PRO のような有料プラグインは WordPress.org に無いので扱え
 
 ---
 
+## 自動更新
+
+更新を人手に頼ると必ず溜まる。溜まったサイトが攻撃の入口になるので、最初から入れておく。
+
+| | 既定 |
+|---|---|
+| プラグイン | 全部オン（**あとから入れたものも自動でオンにする**） |
+| テーマ | 全部オン |
+| 本体のマイナー更新（7.1.4 → 7.1.5） | オン |
+| 本体のメジャー更新（7.1 → 7.2） | **オフ** |
+
+**メジャー更新を既定でオフにしているのは意図的。** テーマやプラグインの互換性が
+崩れることがあり、クライアントのサイトが朝いきなり壊れているのは避けたい。
+こちらで確認してから上げる前提にしている。全部任せるなら
+`define('HB_AUTO_UPDATE_CORE', 'major');`。
+
+**固定はしない。** プラグイン一覧の「自動更新を有効化／無効化」はそのまま使えるし、
+こちらが毎回上書きすることもない。
+`wp-config.php` に `WP_AUTO_UPDATE_CORE` があれば、そちらの意思を尊重して何もしない。
+
+状態は 設定 → HBベース に出る。
+
+---
+
 ## 標準プラグインの初期設定
 
 「既定のままだと困る」ところだけ直す。好みの問題には触らない。
@@ -454,6 +484,7 @@ src/limit-login.php  Limit Login Attempts の初期設定
 src/admin-notices.php 宣伝パネルの抑制
 src/required-plugins.php 標準プラグインのまとめ導入
 src/plugin-defaults.php  標準プラグインの初期設定
+src/auto-updates.php     自動更新を最初から有効化
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面
