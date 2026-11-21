@@ -17,33 +17,59 @@ function hb_admin_screen_init(): void
     add_action('admin_menu', 'hb_admin_screen_menu');
     add_action('admin_init', 'hb_admin_screen_handle_actions');
     add_action('admin_notices', 'hb_admin_screen_pending_notice');
-    add_action('admin_enqueue_scripts', 'hb_admin_screen_style');
-}
-
-/**
- * 操作ボタンを横に並べるためだけの1行。
- *
- * ボタンごとに <form> が要る（それぞれ別の操作をPOSTするため）が、
- * form は既定で改行されるので、表のセルの中で縦に積まれてしまう。
- */
-function hb_admin_screen_style(string $hook): void
-{
-    if ($hook !== 'settings_page_hb-base') {
-        return;
-    }
-
-    wp_add_inline_style('wp-admin', '.hb-inline-form{display:inline-block;margin-right:.25em}');
 }
 
 function hb_admin_screen_menu(): void
 {
-    add_options_page(
+    $hook = add_options_page(
         'HBベース',
         'HBベース',
         'manage_options',
         'hb-base',
         'hb_admin_screen_render'
     );
+
+    // メタボックスの登録は画面が決まってから。
+    add_action('load-' . $hook, 'hb_admin_screen_boxes');
+}
+
+/**
+ * 節をメタボックスとして登録する。
+ *
+ * postbox のHTMLを自分で書くと、折りたたみも並べ替えも表示オプションも
+ * 付いてこない。WordPress の仕組みに乗せれば全部ついてくる。
+ */
+function hb_admin_screen_boxes(): void
+{
+    $screen = get_current_screen();
+
+    if (!$screen) {
+        return;
+    }
+
+    $boxes = [
+        'hb-status'  => ['状態', 'hb_admin_screen_status'],
+        'hb-devices' => ['端末の許可', 'hb_admin_screen_devices'],
+    ];
+
+    if (current_user_can('install_plugins')) {
+        $boxes['hb-plugins'] = ['標準プラグイン', 'hb_admin_screen_plugins'];
+    }
+
+    // 記録が無いうちは箱だけ並んでも仕方がないので出さない。
+    $log = get_option(HB_GUARD_LOG_OPTION, []);
+
+    if (is_array($log) && !empty($log)) {
+        $boxes['hb-log'] = ['遮断した要求', 'hb_admin_screen_guard_log'];
+    }
+
+    foreach ($boxes as $id => [$title, $callback]) {
+        add_meta_box($id, $title, $callback, $screen, 'normal');
+    }
+
+    // 折りたたみの開閉を覚えさせる。
+    add_screen_option('layout_columns', ['max' => 1, 'default' => 1]);
+    wp_enqueue_script('postbox');
 }
 
 /** 承認待ちがあることを全管理画面で知らせる。見落とすとクライアントが入れないままになる。 */
@@ -220,40 +246,24 @@ function hb_admin_screen_render(): void
         return;
     }
 
+    $screen = get_current_screen();
+
     echo '<div class="wrap">';
     echo '<h1>HBベース</h1>';
 
     hb_admin_screen_notice();
 
-    // 節ごとにカードで囲む。見出しだけだと、どこからどこまでが
-    // ひとつの話なのか分からなくなる（WordPress標準のpostboxを使う）。
-    hb_admin_screen_card('状態', 'hb_admin_screen_status');
-    hb_admin_screen_card('端末の許可', 'hb_admin_screen_devices');
-    hb_admin_screen_card('標準プラグイン', 'hb_admin_screen_plugins');
-    hb_admin_screen_card('遮断した要求', 'hb_admin_screen_guard_log');
+    // メタボックスを置くための器。WordPress の管理画面が前提にしている構造。
+    echo '<div id="poststuff"><div id="post-body" class="metabox-holder columns-1"><div id="postbox-container-1" class="postbox-container">';
+
+    do_meta_boxes($screen, 'normal', null);
+
+    echo '</div></div><br class="clear"></div>';
+
+    wp_nonce_field('closedpostboxes', 'closedpostboxesnonce', false);
+    wp_nonce_field('meta-box-order', 'meta-box-order-nonce', false);
 
     echo '</div>';
-}
-
-/**
- * 節をカードで囲む。
- * 中身が何も出なかった節はカードごと出さない（空の箱が並ぶのを避ける）。
- */
-function hb_admin_screen_card(string $title, callable $render): void
-{
-    ob_start();
-    $render();
-    $inside = (string) ob_get_clean();
-
-    if (trim($inside) === '') {
-        return;
-    }
-
-    printf(
-        '<div class="postbox"><div class="postbox-header"><h2 class="hndle">%s</h2></div><div class="inside">%s</div></div>',
-        esc_html($title),
-        $inside // 各描画関数でエスケープ済み
-    );
 }
 
 /* --- 状態 ------------------------------------------------------------- */
@@ -396,9 +406,9 @@ function hb_admin_screen_devices(): void
     echo '</tr></thead><tbody>';
 
     $states = [
-        'pending' => ['承認待ち', ['approve', 'delete']],
-        'trusted' => ['許可済み', ['revoke']],
-        'revoked' => ['取り消し済み', ['approve', 'delete']],
+        'pending' => ['承認待ち', ['approve' => '許可する', 'delete' => '削除']],
+        'trusted' => ['許可済み', ['revoke' => '取り消す']],
+        'revoked' => ['取り消し済み', ['approve' => '許可する', 'delete' => '削除']],
     ];
 
     foreach ($devices as $id => $device) {
@@ -426,9 +436,7 @@ function hb_admin_screen_devices(): void
         printf('<td>%s</td>', $when ? esc_html(wp_date('Y-m-d H:i', $when)) : '—');
 
         echo '<td>';
-        foreach ($actions as $action) {
-            hb_admin_screen_action_button($action, $id);
-        }
+        hb_admin_screen_row_actions($actions, 'hb_id', $id);
         echo '</td></tr>';
     }
 
@@ -526,42 +534,47 @@ function hb_admin_screen_invite_list(): void
             : '—');
 
         echo '<td>';
-        if ($state === 'open') {
-            echo '<form method="post" class="hb-inline-form">';
-            wp_nonce_field('hb_base_action');
-            echo '<input type="hidden" name="hb_action" value="invite-revoke">';
-            printf('<input type="hidden" name="hb_id" value="%s">', esc_attr($id));
-            echo '<button type="submit" class="button">取り消す</button>';
-            echo '</form>';
-        } else {
-            echo '—';
-        }
+        hb_admin_screen_row_actions(
+            $state === 'open' ? ['invite-revoke' => '取り消す'] : [],
+            'hb_id',
+            $id
+        );
         echo '</td></tr>';
     }
 
     echo '</tbody></table>';
 }
 
-function hb_admin_screen_action_button(string $action, string $id): void
+/**
+ * 行の操作ボタン。
+ *
+ * 操作ごとにフォームを分けると、form が改行されてボタンが縦に積まれる。
+ * ボタン自身が name と value を送れるので、フォームは1つで足りる。
+ * （こうすると横並びのためのCSSが要らない）
+ *
+ * @param array<string,string> $actions 操作 => ラベル
+ */
+function hb_admin_screen_row_actions(array $actions, string $field, string $value): void
 {
-    $labels = [
-        'approve' => ['許可する', 'button-primary'],
-        'revoke'  => ['取り消す', ''],
-        'delete'  => ['削除', ''],
-    ];
+    if (empty($actions)) {
+        echo '—';
 
-    if (!isset($labels[$action])) {
         return;
     }
 
-    [$label, $class] = $labels[$action];
-
-    echo '<form method="post" class="hb-inline-form">';
+    echo '<form method="post">';
     wp_nonce_field('hb_base_action');
-    printf('<input type="hidden" name="hb_action" value="%s">', esc_attr($action));
-    printf('<input type="hidden" name="hb_id" value="%s">', esc_attr($id));
-    printf('<button type="submit" class="button %s">%s</button>', esc_attr($class), esc_html($label));
-    echo '</form> ';
+    printf('<input type="hidden" name="%s" value="%s">', esc_attr($field), esc_attr($value));
+
+    foreach ($actions as $action => $label) {
+        printf(
+            '<button type="submit" name="hb_action" value="%s" class="button">%s</button> ',
+            esc_attr($action),
+            esc_html($label)
+        );
+    }
+
+    echo '</form>';
 }
 
 /* --- 標準プラグイン ------------------------------------------------------ */
@@ -597,16 +610,18 @@ function hb_admin_screen_plugins(): void
         printf('<td><code>%s</code></td>', esc_html($slug));
         printf('<td>%s</td>', esc_html($labels[$info['state']]));
 
-        echo '<td>';
         if ($info['state'] === 'missing') {
-            hb_admin_screen_plugin_button('install-plugin', $slug, 'いますぐ導入');
+            $actions = ['install-plugin' => 'いますぐ導入'];
         } elseif ($excluded) {
-            hb_admin_screen_plugin_button('restore-plugin', $slug, '自動有効化に戻す');
+            $actions = ['restore-plugin' => '自動有効化に戻す'];
         } elseif ($info['state'] === 'inactive') {
-            hb_admin_screen_plugin_button('install-plugin', $slug, '有効化');
+            $actions = ['install-plugin' => '有効化'];
         } else {
-            echo '—';
+            $actions = [];
         }
+
+        echo '<td>';
+        hb_admin_screen_row_actions($actions, 'hb_slug', $slug);
         echo '</td></tr>';
     }
 
@@ -622,16 +637,6 @@ function hb_admin_screen_plugins(): void
 
     echo '<p class="description">一覧は <code>HB_REQUIRED_PLUGINS</code> で差し替えられます。'
         . 'WordPress.org にあるものだけが対象です（ACF PRO などの有料プラグインは扱えません）。</p>';
-}
-
-function hb_admin_screen_plugin_button(string $action, string $slug, string $label): void
-{
-    echo '<form method="post" class="hb-inline-form">';
-    wp_nonce_field('hb_base_action');
-    printf('<input type="hidden" name="hb_action" value="%s">', esc_attr($action));
-    printf('<input type="hidden" name="hb_slug" value="%s">', esc_attr($slug));
-    printf('<button type="submit" class="button">%s</button>', esc_html($label));
-    echo '</form>';
 }
 
 /* --- 遮断の記録 --------------------------------------------------------- */
