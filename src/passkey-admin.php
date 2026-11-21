@@ -20,6 +20,55 @@ function hb_passkey_admin_init(): void
 {
     // 見出しは通知より先に出す。WordPressの他の画面と同じ並びにするため。
     add_action('all_admin_notices', 'hb_passkey_admin_heading', 1);
+
+    // プロフィール画面の節見出し。プラグイン本体は優先度1で出力するので、その手前に差す。
+    add_action('show_user_profile', 'hb_passkey_profile_heading', 0);
+    add_action('edit_user_profile', 'hb_passkey_profile_heading', 0);
+}
+
+/**
+ * プロフィール画面のパスキー欄に節見出しを付ける。
+ *
+ * プラグインは <table class="form-table secure-passkeys"> をいきなり出力し、
+ * 他の節（「名前」「連絡先情報」「アプリケーションパスワード」など）にある
+ * <h2> を持たない。そのため ACF Extended が節をカードに包む処理から漏れ、
+ * この欄だけ見出しの無い裸の表になる。
+ *
+ * 見出しを1つ足すだけで、他の節と同じ見え方に揃う。
+ *
+ * @param WP_User $user
+ */
+function hb_passkey_profile_heading($user): void
+{
+    if (!hb_passkey_profile_section_shown($user)) {
+        return;
+    }
+
+    echo '<h2>パスキー</h2>';
+}
+
+/**
+ * プラグイン側がこの欄を実際に出すかどうか。
+ * 出ないのに見出しだけ残ると、空の節ができて不自然になる。
+ *
+ * @param WP_User $user
+ */
+function hb_passkey_profile_section_shown($user): bool
+{
+    $helper = '\\Secure_Passkeys\\Utils\\Secure_Passkeys_Helper';
+
+    // プラグインが無い・作りが変わったときは、余計なことをせず黙る。
+    if (!class_exists($helper)
+        || !method_exists($helper, 'get_option')
+        || !method_exists($helper, 'is_user_in_excluded_roles')) {
+        return false;
+    }
+
+    if (!$helper::get_option('display_passkey_edit_user_enabled', 0)) {
+        return false;
+    }
+
+    return !$helper::is_user_in_excluded_roles((int) $user->ID);
 }
 
 function hb_passkey_admin_heading(): void

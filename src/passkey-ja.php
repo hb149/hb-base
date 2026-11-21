@@ -132,7 +132,9 @@ function hb_passkey_ja_map(): array
 
         /* ---- 管理画面 ---- */
         'Secure Passkeys' => 'パスキー',
-        'Passwordless Secure Passkeys' => 'パスキー（パスワードレス認証）',
+        // プロフィール画面の項目名。節見出し（passkey-admin.php が出す「パスキー」）と
+        // 並ぶので、同じ語を繰り返さない短い名前にする。
+        'Passwordless Secure Passkeys' => 'ログインに使うパスキー',
         'Settings'     => '設定',
         'Passkeys'     => 'パスキー',
         'Overview'     => '概要',
