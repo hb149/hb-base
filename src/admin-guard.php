@@ -385,3 +385,66 @@ function hb_guard_log_block(): void
 
     update_option(HB_GUARD_LOG_OPTION, array_slice($log, 0, HB_GUARD_LOG_MAX), false);
 }
+
+/* ---------------------------------------------------------------------------
+ * 有効にする前の下見
+ * -------------------------------------------------------------------------*/
+
+/**
+ * いま 'on' にしたら自分は入れるか。
+ *
+ * これが分からないまま切り替えるのが一番こわい。
+ * 画面に先に出しておく。
+ *
+ * @return array{pass:bool,reason:string}
+ */
+function hb_guard_self_check(): array
+{
+    if (hb_ip_in_list(hb_client_ip(), hb_admin_allow_ips())) {
+        return ['pass' => true, 'reason' => '接続元IPが許可リストに入っています'];
+    }
+
+    $id = hb_device_current_id();
+
+    if ($id !== '' && hb_device_is_trusted($id)) {
+        return ['pass' => true, 'reason' => 'この端末は許可済みです'];
+    }
+
+    if (hb_admin_unlock_key() !== '') {
+        return ['pass' => false, 'reason' => '許可IP・許可端末のどちらにも該当しません（緊急解除キーは設定済み）'];
+    }
+
+    return ['pass' => false, 'reason' => '許可IP・許可端末のどちらにも該当せず、緊急解除キーもありません'];
+}
+
+/**
+ * 記録に出てきた接続元の顔ぶれ。
+ * 身内が並んでいないか、切り替える前に見るためのもの。
+ *
+ * @return array{ips:array<string,int>,devices:array<string,int>}
+ */
+function hb_guard_log_summary(): array
+{
+    $log = get_option(HB_GUARD_LOG_OPTION, []);
+
+    $ips     = [];
+    $devices = [];
+
+    foreach (is_array($log) ? $log : [] as $row) {
+        $ip = (string) ($row['ip'] ?? '');
+        $dv = (string) ($row['device'] ?? '');
+
+        if ($ip !== '') {
+            $ips[$ip] = ($ips[$ip] ?? 0) + 1;
+        }
+
+        if ($dv !== '') {
+            $devices[$dv] = ($devices[$dv] ?? 0) + 1;
+        }
+    }
+
+    arsort($ips);
+    arsort($devices);
+
+    return ['ips' => $ips, 'devices' => $devices];
+}

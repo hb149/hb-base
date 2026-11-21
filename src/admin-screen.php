@@ -534,12 +534,31 @@ function hb_admin_screen_row(string $label, string $value): void
 function hb_admin_screen_mode_label(string $mode): string
 {
     $labels = [
-        'off' => '<strong>停止中</strong><p class="description">誰でも管理画面を開けます。</p>',
-        'log' => '<strong>様子見</strong><p class="description">遮断せず記録だけ取ります。</p>',
-        'on'  => '<strong>有効</strong><p class="description">許可IPと許可端末だけが入れます。</p>',
+        'off' => ['停止中', '誰でも管理画面を開けます。'],
+        'log' => ['様子見', '遮断せず記録だけ取ります。'],
+        'on'  => ['有効', '許可IPと許可端末だけが入れます。'],
     ];
 
-    return $labels[$mode] ?? esc_html($mode);
+    if (!isset($labels[$mode])) {
+        return esc_html($mode);
+    }
+
+    [$name, $note] = $labels[$mode];
+
+    $html = sprintf('<strong>%s</strong><p class="description">%s</p>', esc_html($name), esc_html($note));
+
+    // 切り替える前に、自分が締め出されないかを先に出す。
+    if ($mode !== 'on') {
+        $check = hb_guard_self_check();
+
+        $html .= sprintf(
+            '<p class="description">いま <code>on</code> にすると、あなたは<strong>%s</strong>。%s</p>',
+            $check['pass'] ? '入れます' : '入れなくなります',
+            esc_html($check['reason'])
+        );
+    }
+
+    return $html;
 }
 
 /* --- 通知 ------------------------------------------------------------- */
@@ -909,6 +928,36 @@ function hb_admin_screen_plugin_row(string $slug, array $info): string
 
 /* --- 遮断の記録 --------------------------------------------------------- */
 
+/** 記録に出てきた接続元の顔ぶれ。切り替える前の確認用。 */
+function hb_admin_screen_log_summary(): void
+{
+    $summary = hb_guard_log_summary();
+
+    if (empty($summary['ips'])) {
+        return;
+    }
+
+    echo '<table class="form-table" role="presentation"><tbody>';
+
+    $format = static function (array $counts): string {
+        $out = [];
+
+        foreach (array_slice($counts, 0, 10, true) as $value => $count) {
+            $out[] = sprintf('<code>%s</code>（%d回）', esc_html($value), $count);
+        }
+
+        return implode('　', $out);
+    };
+
+    hb_admin_screen_row('出てきたIP', $format($summary['ips']));
+
+    if (!empty($summary['devices'])) {
+        hb_admin_screen_row('出てきた端末', $format($summary['devices']));
+    }
+
+    echo '</tbody></table>';
+}
+
 function hb_admin_screen_guard_log(): void
 {
     $log = get_option(HB_GUARD_LOG_OPTION, []);
@@ -919,6 +968,8 @@ function hb_admin_screen_guard_log(): void
 
     echo '<p>様子見モードでは、遮断したはずの要求がここに記録されます。'
         . '身内のIPや端末が並んでいないか確認してから有効にしてください。</p>';
+
+    hb_admin_screen_log_summary();
 
     echo '<table class="wp-list-table widefat striped"><thead><tr>';
     echo '<th scope="col">日時</th><th scope="col">IP</th><th scope="col">URL</th>';
