@@ -102,6 +102,12 @@ define('HB_LOGIN_STYLE',  false);      // 整形ごと止める
 define('HB_LLAR_SETTINGS', ['allowed_retries' => 3, 'lockout_duration' => 1800]);
 define('HB_LLAR_MANAGE', false);       // 初期値の投入ごと止める
 
+/* ---- 保守担当 ---- */
+
+// ここに挙げた人にだけ、保守用の管理メニューを見せる
+// メールアドレス・ログイン名・ユーザーIDのどれでも可。未設定なら全員クライアント扱い
+define('HB_MAINTAINERS', 'you@example.com');
+
 /* ---- 共通 ---- */
 
 // 動かすモジュールを絞る（既定は全部）
@@ -234,6 +240,12 @@ Cloudflare に問い合わせできなかったときは、本番は止め、ロ
 | 通知 | 3回ロックされたら管理者メールへ |
 | 左メニュー・ツールバー・ダッシュボード | 非表示（設定画面は「設定」の中に残る） |
 
+管理画面の道具を隠すのは、クライアントが毎日使う画面を保守用プラグインが
+占領しないため。`HB_MAINTAINERS` に登録した人が見ているあいだだけ表示に戻す。
+DBの値は書き換えないので、クライアントから見た状態は変わらない。
+このプラグイン自身の設定画面では上書きしない（チェックボックスが実際と
+食い違い、そのまま保存すると全員に表示される設定に化けるため）。
+
 **固定はしない。** 書き込んだあとは管理画面から自由に変更でき、こちらが
 上書きし直すこともない。すでに値が入っているキーには最初から触れないので、
 運用中のサイトに後から入れても設定は変わらない。
@@ -280,6 +292,7 @@ GitHub Actions が `hb-base.zip` を作って Release に添付する。
 hb-base.php          読み込みと更新登録だけ
 src/config.php       wp-config.php の定数を読む
 src/ip.php           接続元IPの判定（CIDR・プロキシ）
+src/maintainer.php   保守担当の見分け（HB_MAINTAINERS）
 src/device.php       端末の識別と許可
 src/admin-guard.php  /wp-admin と wp-login.php の門番
 src/turnstile.php    Cloudflare Turnstile

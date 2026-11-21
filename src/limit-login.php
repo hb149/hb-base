@@ -13,6 +13,11 @@
  *   すでに値が入っているキーには触れない。
  *   運用中のサイトに後からこのプラグインを入れても、設定は変わらない。
  *
+ * ■ 保守担当には見せる
+ *   管理画面の道具（左メニュー・ツールバー・ダッシュボード）は既定で隠すが、
+ *   HB_MAINTAINERS に登録した人が見ているあいだだけ表示に戻す。
+ *   DBの値は書き換えないので、クライアントから見た状態は変わらない。
+ *
  * ■ 案件で初期値を変えたいとき
  *   wp-config.php で、変えたいキーだけ書く（投入より前に書くこと）。
  *     define('HB_LLAR_SETTINGS', ['allowed_retries' => 3, 'lockout_duration' => 1800]);
@@ -39,6 +44,56 @@ function hb_limit_login_init(): void
 
     // 管理画面を開いたときに一度だけ見る。表示側では何もしない。
     add_action('admin_init', 'hb_limit_login_seed');
+
+    // 保守担当にだけ、隠した管理画面の道具を見せ戻す。
+    foreach (array_keys(hb_limit_login_ui_keys()) as $key) {
+        add_filter('pre_option_' . HB_LLAR_PREFIX . $key, 'hb_limit_login_show_for_maintainer', 10, 2);
+    }
+}
+
+/**
+ * 管理画面での見せかたに関わるキーと、保守担当に見せるときの値。
+ */
+function hb_limit_login_ui_keys(): array
+{
+    return [
+        'show_top_level_menu_item' => 1,
+        'show_top_bar_menu_item'   => 1,
+        'hide_dashboard_widget'    => 0,
+        'show_warning_badge'       => 1,
+    ];
+}
+
+/**
+ * 保守担当が見ているあいだだけ、保存値の代わりに「表示する」を返す。
+ *
+ * DBの値は書き換えない。クライアントから見た状態は変わらない。
+ *
+ * ただしこのプラグイン自身の設定画面では何もしない。
+ * チェックボックスに実際と違う状態が出てしまい、
+ * そのまま保存すると全員に表示される設定に化けるため。
+ *
+ * @param mixed  $pre    false のままならDBの値を使う
+ * @param string $option オプション名
+ * @return mixed
+ */
+function hb_limit_login_show_for_maintainer($pre, $option = '')
+{
+    if (!is_admin() || !hb_is_maintainer()) {
+        return $pre;
+    }
+
+    // 設定画面は保存値をそのまま映す。
+    $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+
+    if (strpos($page, 'limit-login-attempts') === 0) {
+        return $pre;
+    }
+
+    $key  = substr((string) $option, strlen(HB_LLAR_PREFIX));
+    $keys = hb_limit_login_ui_keys();
+
+    return array_key_exists($key, $keys) ? $keys[$key] : $pre;
 }
 
 /**

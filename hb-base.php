@@ -36,6 +36,7 @@ define('HB_BASE_FILE', __FILE__);
 
 require_once __DIR__ . '/src/config.php';
 require_once __DIR__ . '/src/ip.php';
+require_once __DIR__ . '/src/maintainer.php';
 require_once __DIR__ . '/src/device.php';
 require_once __DIR__ . '/src/admin-guard.php';
 require_once __DIR__ . '/src/turnstile.php';
