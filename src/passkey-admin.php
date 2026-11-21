@@ -36,7 +36,12 @@ function hb_passkey_admin_heading(): void
         return;
     }
 
-    printf('<h1 class="wp-heading-inline" style="margin:0 0 .5em">%s</h1>', esc_html($title));
+    // .wrap で包む。管理画面の見出しの余白は .wrap のCSSが持っているので、
+    // 裸の <h1> を置くと管理バーの下に潜り込んで文字が切れる。
+    printf(
+        '<div class="wrap"><h1 class="wp-heading-inline">%s</h1></div>',
+        esc_html($title)
+    );
 }
 
 /**
