@@ -218,6 +218,58 @@ function hb_support_reply(string $id, string $body)
     );
 }
 
+/**
+ * 既読にする。
+ *
+ * 詳細の GET は既読にしない約束なので、この口を明示的に叩く。
+ * 応答の unread_total は**サイト全体の残り**なので、バッジをそのまま書き換えられる。
+ *
+ * @return array<string,mixed>|WP_Error
+ */
+function hb_support_read(string $id)
+{
+    $result = hb_support_request('POST', '/api/wp/tickets/' . rawurlencode($id) . '/read', [], []);
+
+    if (!is_wp_error($result) && isset($result['unread_total'])) {
+        $counts = hb_support_unread();
+        $counts['unread_total'] = (int) $result['unread_total'];
+
+        update_option(HB_SUPPORT_UNREAD_OPTION, ['at' => time(), 'counts' => $counts], false);
+    }
+
+    return $result;
+}
+
+/**
+ * 新規に起票する。
+ *
+ * 送れるのは4つだけ。severity と status はサーバーが決める
+ * （客に選ばせると全部「重大」になる、という理由でアプリ側が固定している）。
+ *
+ * @return array<string,mixed>|WP_Error 201＝詳細と同じ形
+ */
+function hb_support_create(string $title, string $body, string $kind)
+{
+    $kinds = ['update', 'incident', 'consult'];
+
+    return hb_support_request('POST', '/api/wp/tickets', [], [
+        'title'          => $title,
+        'body'           => $body,
+        'kind'           => in_array($kind, $kinds, true) ? $kind : 'update',
+        'attachment_ids' => [],
+    ]);
+}
+
+/** WP から選ばせる種別。spot・managed・growth は社内が付け替えるので出さない。 */
+function hb_support_kinds(): array
+{
+    return [
+        'update'   => '更新作業',
+        'incident' => '障害・不具合',
+        'consult'  => '相談',
+    ];
+}
+
 /** @return array<string,mixed>|WP_Error */
 function hb_support_action(string $id, string $action, string $comment = '')
 {
@@ -421,31 +473,48 @@ function hb_support_handle_webhook(WP_REST_Request $request): WP_REST_Response
  */
 function hb_support_mock_response(string $method, string $path)
 {
-    $dir = HB_BASE_DIR . '/docs/hb-support/fixtures';
-
     $file = 'tickets-list';
 
     if (strpos($path, '/api/wp/ping') === 0) {
         $file = 'ping';
     } elseif (strpos($path, '/api/wp/unread') === 0) {
         $file = 'unread';
+    } elseif ($path === '/api/wp/tickets' && $method === 'POST') {
+        $file = 'ticket-created';
+    } elseif (preg_match('#/api/wp/tickets/[^/]+/read$#', $path) && $method === 'POST') {
+        return ['unread_total' => 0];
     } elseif (preg_match('#/api/wp/tickets/[^/]+/messages$#', $path) && $method === 'POST') {
         $file = 'message-created';
     } elseif (preg_match('#/api/wp/tickets/[^/]+/actions$#', $path) && $method === 'POST') {
         $file = 'ticket-detail';
-    } elseif (preg_match('#/api/wp/tickets/[^/]+$#', $path)) {
-        $file = 'ticket-detail';
+    } elseif (preg_match('#/api/wp/tickets/([^/]+)$#', $path, $m)) {
+        // 起票した直後の1件は、起票の応答（詳細と同じ形）を返す。
+        // 1本しか返さないと、作ったはずの依頼が別物に見えてしまう。
+        $created = hb_support_mock_read('ticket-created');
+        $file    = (is_array($created) && ($created['id'] ?? '') === $m[1]) ? 'ticket-created' : 'ticket-detail';
     }
 
-    $json = @file_get_contents($dir . '/' . $file . '.json');
+    $data = hb_support_mock_read($file);
+
+    return is_array($data) ? $data : new WP_Error('server_error', '', ['status' => 500]);
+}
+
+/**
+ * フィクスチャを1本読む。
+ *
+ * @return array<string,mixed>|null
+ */
+function hb_support_mock_read(string $name): ?array
+{
+    $json = @file_get_contents(HB_BASE_DIR . '/docs/hb-support/fixtures/' . $name . '.json');
 
     if ($json === false) {
-        return new WP_Error('server_error', '', ['status' => 500]);
+        return null;
     }
 
     $data = json_decode($json, true);
 
-    return is_array($data) ? $data : new WP_Error('server_error', '', ['status' => 500]);
+    return is_array($data) ? $data : null;
 }
 
 /**

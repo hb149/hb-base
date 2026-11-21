@@ -46,7 +46,12 @@ $tabs  = ['open' => '対応中', 'closed' => '完了・取消', 'all' => 'すべ
                 <td>
                     <strong>
                         <a href="<?php echo esc_url(add_query_arg(
-                            ['page' => 'hb-support', 'ticket' => (string) $item['id']],
+                            array_filter([
+                                'page'   => 'hb-support',
+                                'ticket' => (string) $item['id'],
+                                // 既読にしてよいかの手がかり（詳細の応答に未読数が無いため）
+                                'unread' => $unread > 0 ? '1' : null,
+                            ]),
                             admin_url('admin.php')
                         )); ?>"><?php echo esc_html((string) ($item['title'] ?? '')); ?></a>
                     </strong>
@@ -65,4 +70,45 @@ $tabs  = ['open' => '対応中', 'closed' => '完了・取消', 'all' => 'すべ
         <?php endforeach; ?>
         </tbody>
     </table>
+<?php endif; ?>
+
+<?php if (!empty($features['create'])) : ?>
+    <h2>新しく依頼する</h2>
+    <form method="post">
+        <?php wp_nonce_field('hb_support'); ?>
+        <table class="form-table" role="presentation">
+            <tbody>
+                <tr>
+                    <th scope="row"><label for="hb_title">件名</label></th>
+                    <td><input type="text" id="hb_title" name="hb_title" class="regular-text"
+                               maxlength="120" required></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="hb_kind">種別</label></th>
+                    <td>
+                        <select id="hb_kind" name="hb_kind">
+                            <?php foreach (hb_support_kinds() as $key => $label) : ?>
+                                <option value="<?php echo esc_attr($key); ?>"><?php echo esc_html($label); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="hb_new_body">内容</label></th>
+                    <td>
+                        <textarea id="hb_new_body" name="hb_body" rows="5" class="large-text"
+                                  maxlength="10000" required></textarea>
+                        <?php if (isset($data['quota']['remaining']) && (int) $data['quota']['remaining'] === 0) : ?>
+                            <p class="description">
+                                今月の件数を使い切っています。別途お見積りになる場合があります。
+                            </p>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="submit">
+            <button type="submit" name="hb_support_action" value="create" class="button button-primary">依頼する</button>
+        </p>
+    </form>
 <?php endif; ?>

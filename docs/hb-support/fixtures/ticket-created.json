@@ -1,0 +1,31 @@
+{
+  "id": "clx9tkt0004",
+  "title": "お知らせページに1件追加してほしい",
+  "body": "12/28〜1/5 の休業案内を、お知らせ一覧の先頭に出してください。\n文面は昨年と同じで構いません。",
+  "status": "received",
+  "status_label": "受付",
+  "kind": "update",
+  "kind_label": "更新作業",
+  "severity": "normal",
+  "received_at": "2026-11-22T02:30:00.000Z",
+  "due_on": "2026-11-24T00:00:00.000Z",
+  "approved_at": null,
+  "completed_at": null,
+  "spot_amount": null,
+  "assignee_name": null,
+  "allowed_actions": ["withdraw"],
+  "messages": {
+    "items": [
+      {
+        "id": "clx9log0004",
+        "at": "2026-11-22T02:30:00.000Z",
+        "author": { "type": "client", "name": "佐藤 一郎", "is_you": true },
+        "body": "12/28〜1/5 の休業案内を、お知らせ一覧の先頭に出してください。\n文面は昨年と同じで構いません。",
+        "attachments": []
+      }
+    ],
+    "has_more": false,
+    "next_before": null
+  },
+  "quota": { "ym": "2026-11", "limit": 5, "used": 2, "carried": 1, "remaining": 4 }
+}

@@ -112,6 +112,29 @@ function hb_support_screen_handle(): void
             : hb_support_reply($id, $body);
 
         $notice = is_wp_error($result) ? hb_support_message($result) : 'sent';
+    } elseif ($action === 'create') {
+        $title = sanitize_text_field(wp_unslash((string) ($_POST['hb_title'] ?? '')));
+        $body  = sanitize_textarea_field(wp_unslash((string) ($_POST['hb_body'] ?? '')));
+        $kind  = sanitize_key(wp_unslash((string) ($_POST['hb_kind'] ?? 'update')));
+
+        if ($title === '' || $body === '') {
+            $notice = '件名と内容を入力してください。';
+        } else {
+            $created = hb_support_create($title, $body, $kind);
+
+            if (is_wp_error($created)) {
+                $notice = hb_support_message($created);
+            } else {
+                // 起票の応答は詳細と同じ形。そのまま新しい依頼の画面へ送る。
+                set_transient('hb_support_notice_' . get_current_user_id(), 'created', 60);
+
+                wp_safe_redirect(add_query_arg(
+                    ['page' => 'hb-support', 'ticket' => (string) ($created['id'] ?? '')],
+                    admin_url('admin.php')
+                ));
+                exit;
+            }
+        }
     } elseif (in_array($action, ['approve', 'accept', 'withdraw'], true)) {
         $comment = sanitize_textarea_field(wp_unslash((string) ($_POST['hb_comment'] ?? '')));
         $result  = hb_support_action($id, $action, $comment);
@@ -167,8 +190,9 @@ function hb_support_screen_notice(): void
     delete_transient($key);
 
     $messages = [
-        'sent' => ['success', '送信しました。'],
-        'done' => ['success', '反映しました。'],
+        'sent'    => ['success', '送信しました。'],
+        'done'    => ['success', '反映しました。'],
+        'created' => ['success', '依頼を受け付けました。担当者から折り返しご連絡します。'],
     ];
 
     [$type, $text] = $messages[$notice] ?? ['error', $notice];
@@ -195,12 +219,22 @@ function hb_support_screen_list(): void
         return;
     }
 
+    $features = hb_support_features();
+
     include HB_BASE_DIR . '/views/support/list.php';
 }
 
 function hb_support_screen_detail(string $id): void
 {
     $data = hb_support_ticket($id);
+
+    // 既読にする。
+    // 「未読があった時だけ1回」が約束だが、詳細の応答に unread_count が無いので
+    // 一覧のリンクが付けてくる unread=1 を手がかりにしている（qa.md Q7）。
+    // 直リンクでは叩かない＝読んでいないのに既読になるより、未読が残るほうが軽い。
+    if (!is_wp_error($data) && !empty($_GET['unread'])) {
+        hb_support_read($id);
+    }
 
     if (is_wp_error($data)) {
         // 無いチケットは一覧へ戻す。開いたままにしても何もできない。

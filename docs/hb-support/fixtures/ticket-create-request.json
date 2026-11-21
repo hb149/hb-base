@@ -1,0 +1,7 @@
+{
+  "_note": "POST /api/wp/tickets の送る側。送れる項目はこの4つだけ（severity は送れない・status は送れない）。",
+  "title": "お知らせページに1件追加してほしい",
+  "body": "12/28〜1/5 の休業案内を、お知らせ一覧の先頭に出してください。\n文面は昨年と同じで構いません。",
+  "kind": "update",
+  "attachment_ids": []
+}
