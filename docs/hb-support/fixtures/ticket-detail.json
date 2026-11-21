@@ -1,0 +1,46 @@
+{
+  "id": "clx9tkt0001",
+  "title": "トップページのバナー差し替え",
+  "body": "年末年始の告知バナーに差し替えてください。画像は添付のとおりです。",
+  "status": "working",
+  "status_label": "対応中",
+  "kind": "update",
+  "kind_label": "更新作業",
+  "severity": "normal",
+  "received_at": "2026-11-20T01:12:00.000Z",
+  "due_on": "2026-11-20T00:00:00.000Z",
+  "approved_at": null,
+  "completed_at": null,
+  "spot_amount": null,
+  "assignee_name": "山田 太郎",
+  "allowed_actions": ["withdraw"],
+  "messages": {
+    "items": [
+      {
+        "id": "clx9log0001",
+        "at": "2026-11-20T01:12:00.000Z",
+        "author": { "type": "client", "name": "佐藤", "is_you": true },
+        "body": "年末年始の告知バナーに差し替えてください。",
+        "attachments": []
+      },
+      {
+        "id": "clx9log0002",
+        "at": "2026-11-21T07:40:11.000Z",
+        "author": { "type": "staff", "name": "山田 太郎" },
+        "body": "差し替えました。ご確認ください。\n差分は下の画像のとおりです。",
+        "attachments": [
+          {
+            "id": "clx9med0001",
+            "filename": "preview.png",
+            "mime_type": "image/png",
+            "size": 184320,
+            "url": "/api/wp/attachments/clx9med0001"
+          }
+        ]
+      }
+    ],
+    "has_more": false,
+    "next_before": null
+  },
+  "quota": { "ym": "2026-11", "limit": 5, "used": 2, "carried": 1, "remaining": 4 }
+}

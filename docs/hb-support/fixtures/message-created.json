@@ -1,0 +1,8 @@
+{
+  "id": "clx9log0003",
+  "at": "2026-11-22T01:00:00.000Z",
+  "author": { "type": "client", "name": "佐藤 一郎", "is_you": true },
+  "body": "ありがとうございます。文字を少し大きくできますか。",
+  "attachments": [],
+  "ticket": { "id": "clx9tkt0001", "status": "working", "status_label": "対応中" }
+}

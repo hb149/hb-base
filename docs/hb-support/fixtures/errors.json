@@ -1,0 +1,17 @@
+{
+  "_note": "エラーは全部この2項目だけ（code=機械用・error=人に出す日本語）。409 だけ allowed_actions を足す。",
+  "400": { "code": "invalid_request", "error": "本文を入力してください。" },
+  "401": { "code": "invalid_token", "error": "接続情報が無効です。保守担当へご連絡ください。" },
+  "403_plugin_disabled": { "code": "plugin_disabled", "error": "保守サポートは現在ご利用いただけません。" },
+  "403_site_inactive": { "code": "site_inactive", "error": "このサイトの保守サポートは終了しています。" },
+  "404": { "code": "not_found", "error": "お探しの依頼は見つかりませんでした。" },
+  "409": {
+    "code": "conflict",
+    "error": "この依頼の状況が変わっています。画面を読み込み直してください。",
+    "allowed_actions": ["accept"]
+  },
+  "413": { "code": "too_large", "error": "ファイルが大きすぎます（1件 25MB まで）。" },
+  "429": { "code": "rate_limited", "error": "リクエストが多すぎます。しばらくお待ちください。" },
+  "500": { "code": "server_error", "error": "いま接続できません。しばらくしてからお試しください。" },
+  "503": { "code": "maintenance", "error": "いま接続できません。しばらくしてからお試しください。" }
+}

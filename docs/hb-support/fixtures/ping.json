@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "api_version": 1,
+  "env": "production",
+  "server_time": "2026-11-22T01:00:00.000Z",
+  "site": { "id": "clx9site0001", "name": "株式会社サンプル コーポレートサイト", "plan": "standard" },
+  "features": { "tickets": true, "create": true, "actions": true, "attachments": false, "webhook": true }
+}

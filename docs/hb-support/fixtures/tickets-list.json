@@ -1,0 +1,60 @@
+{
+  "site": { "id": "clx9site0001", "name": "株式会社サンプル コーポレートサイト", "plan": "standard" },
+  "items": [
+    {
+      "id": "clx9tkt0001",
+      "title": "トップページのバナー差し替え",
+      "status": "working",
+      "status_label": "対応中",
+      "kind": "update",
+      "kind_label": "更新作業",
+      "severity": "normal",
+      "received_at": "2026-11-20T01:12:00.000Z",
+      "due_on": "2026-11-20T00:00:00.000Z",
+      "completed_at": null,
+      "assignee_name": "山田 太郎",
+      "message_count": 4,
+      "unread_count": 1,
+      "last_message_at": "2026-11-21T07:40:11.000Z",
+      "created_by": { "name": "佐藤", "is_you": true }
+    },
+    {
+      "id": "clx9tkt0002",
+      "title": "お問い合わせフォームの項目追加（作業見積の確認）",
+      "status": "approval",
+      "status_label": "見積・承認待ち",
+      "kind": "spot",
+      "kind_label": "スポット",
+      "severity": "normal",
+      "received_at": "2026-11-18T05:00:00.000Z",
+      "due_on": "2026-11-19T00:00:00.000Z",
+      "completed_at": null,
+      "assignee_name": "山田 太郎",
+      "spot_amount": 12600,
+      "message_count": 2,
+      "unread_count": 0,
+      "last_message_at": "2026-11-19T02:10:00.000Z",
+      "created_by": { "name": "鈴木", "is_you": false }
+    },
+    {
+      "id": "clx9tkt0003",
+      "title": "サイトが表示されない",
+      "status": "confirming",
+      "status_label": "お客様確認待ち",
+      "kind": "incident",
+      "kind_label": "障害",
+      "severity": "critical",
+      "received_at": "2026-11-21T22:40:00.000Z",
+      "due_on": "2026-11-22T00:00:00.000Z",
+      "completed_at": null,
+      "assignee_name": "山田 太郎",
+      "message_count": 3,
+      "unread_count": 0,
+      "last_message_at": "2026-11-22T00:05:00.000Z",
+      "created_by": { "name": "サイト担当者", "is_you": false }
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null,
+  "unread_total": 1
+}
