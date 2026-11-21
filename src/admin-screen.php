@@ -39,8 +39,6 @@ function hb_admin_screen_script(string $hook): void
         return;
     }
 
-    hb_admin_screen_borrow_ui();
-
     wp_register_script('hb-admin-screen', false, [], HB_BASE_VERSION, true);
     wp_enqueue_script('hb-admin-screen');
 
@@ -53,26 +51,6 @@ function hb_admin_screen_script(string $hook): void
         'hb-admin-screen',
         '(' . hb_admin_screen_js() . ')(' . wp_json_encode($data) . ');'
     );
-}
-
-/**
- * サイト側が管理画面の設定ページに手を入れている場合、その部品を借りる。
- *
- * ACF Extended はコアの設定画面だけに自分のUIを当てている。
- * こちらの画面には来ないので、同じ見た目にならない。
- * 真似たCSSを書くのではなく、向こうが登録している部品をそのまま読み込む。
- *
- * 入っていないサイトでは何も起きない（登録が無ければ WordPress が無視する）。
- * 向こうが名前を変えたら、ただ効かなくなるだけで壊れない。
- */
-function hb_admin_screen_borrow_ui(): void
-{
-    if (!wp_style_is('acf-extended-ui', 'registered')) {
-        return;
-    }
-
-    wp_enqueue_style('acf-extended-ui');
-    wp_enqueue_script('acf-extended-ui');
 }
 
 function hb_admin_screen_js(): string
@@ -454,12 +432,12 @@ function hb_admin_screen_render(): void
 /**
  * 節の見出しと中身。
  *
- * <h2> ＋ <table class="form-table"> という、WordPressの設定画面と同じ並べ方にする。
- * カードの枠や区切り線は、サイト側が管理画面に当てているスタイルが面倒を見る
- * （この案件では ACF Extended。hb_admin_screen_borrow_ui() で読み込んでいる）。
+ * <h2> ＋ <table class="form-table"> だけで組む。WordPress の設定画面は
+ * どれもこの形なので、同じ見え方になる。
  *
- * 自前で postbox の入れ物を作らない。向こうのスタイルと二重になり、
- * 見出しがタブのように見えるなどの食い違いが出る。
+ * 自前のカードは作らない。他のプラグインのスタイルも借りない。
+ * 借りると、入っていないサイトで見た目が変わるうえ、
+ * 向こうのCSSはあちらのDOMを前提にしているので崩れる（実際に崩れた）。
  *
  * 中身が何も出ない節は見出しごと出さない。
  */
