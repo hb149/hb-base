@@ -13,6 +13,7 @@
   "completed_at": null,
   "spot_amount": null,
   "assignee_name": null,
+  "unread_count": 0,
   "allowed_actions": ["withdraw"],
   "messages": {
     "items": [

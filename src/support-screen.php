@@ -228,11 +228,9 @@ function hb_support_screen_detail(string $id): void
 {
     $data = hb_support_ticket($id);
 
-    // 既読にする。
-    // 「未読があった時だけ1回」が約束だが、詳細の応答に unread_count が無いので
-    // 一覧のリンクが付けてくる unread=1 を手がかりにしている（qa.md Q7）。
-    // 直リンクでは叩かない＝読んでいないのに既読になるより、未読が残るほうが軽い。
-    if (!is_wp_error($data) && !empty($_GET['unread'])) {
+    // 既読にする。詳細の GET では既読にならない約束なので、この口を明示的に叩く。
+    // 未読が無いときは叩かない（read は冪等だが、無駄な往復をしない）。
+    if (!is_wp_error($data) && (int) ($data['unread_count'] ?? 0) > 0) {
         hb_support_read($id);
     }
 

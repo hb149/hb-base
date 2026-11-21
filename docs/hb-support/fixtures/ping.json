@@ -1,6 +1,8 @@
 {
+  "_note": "contract_version は実応答では contract.version ファイルの中身が入る（下の値は置き場所を示すだけ）。WP 側は自分の docs/hb-support/contract.version と突き合わせ、違ったら『契約が更新されています』を出す。",
   "ok": true,
   "api_version": 1,
+  "contract_version": "000000000000",
   "env": "production",
   "server_time": "2026-11-22T01:00:00.000Z",
   "site": { "id": "clx9site0001", "name": "株式会社サンプル コーポレートサイト", "plan": "standard" },

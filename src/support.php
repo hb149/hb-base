@@ -283,6 +283,45 @@ function hb_support_action(string $id, string $action, string $comment = '')
 }
 
 /* ---------------------------------------------------------------------------
+ * 契約の版
+ *
+ * 「上流が動いたのに取り込んでいない」は、自分のファイル同士を突き合わせても
+ * 分からない（古い物同士で整合してしまう）。版を ping に載せて運んでもらい、
+ * 手元の contract.version と比べる。
+ * -------------------------------------------------------------------------*/
+
+/** 手元が持っている契約の版。 */
+function hb_support_contract_version(): string
+{
+    $path = HB_BASE_DIR . '/docs/hb-support/contract.version';
+    $raw  = @file_get_contents($path);
+
+    return $raw === false ? '' : trim($raw);
+}
+
+/** アプリが名乗った版（最後に ping が取れた時の値）。 */
+function hb_support_remote_version(): string
+{
+    $saved = get_option(HB_SUPPORT_FEATURES_OPTION);
+
+    return is_array($saved) ? (string) ($saved['contract_version'] ?? '') : '';
+}
+
+/**
+ * 契約がずれているか。
+ *
+ * どちらかが空（まだ ping していない・ファイルが無い）なら判断しない。
+ * 「分からない」を「ずれている」と言わない。
+ */
+function hb_support_contract_stale(): bool
+{
+    $mine   = hb_support_contract_version();
+    $theirs = hb_support_remote_version();
+
+    return $mine !== '' && $theirs !== '' && $mine !== $theirs;
+}
+
+/* ---------------------------------------------------------------------------
  * 機能の出し分け（ping の features）
  * -------------------------------------------------------------------------*/
 
@@ -342,7 +381,8 @@ function hb_support_refresh_features()
     }
 
     update_option(HB_SUPPORT_FEATURES_OPTION, [
-        'at'       => time(),
+        'at'               => time(),
+        'contract_version' => (string) ($ping['contract_version'] ?? ''),
         'features' => is_array($ping['features'] ?? null) ? $ping['features'] : [],
         'site'     => is_array($ping['site'] ?? null) ? $ping['site'] : [],
         'env'      => (string) ($ping['env'] ?? ''),
@@ -496,7 +536,18 @@ function hb_support_mock_response(string $method, string $path)
 
     $data = hb_support_mock_read($file);
 
-    return is_array($data) ? $data : new WP_Error('server_error', '', ['status' => 500]);
+    if (!is_array($data)) {
+        return new WP_Error('server_error', '', ['status' => 500]);
+    }
+
+    // ping の contract_version はフィクスチャでは埋め草（000000000000）。
+    // 本番のアプリは contract.sha256 から読んで返すので、モックも手元の版を名乗らせる。
+    // そうしないと、繋いでもいないのに「契約が更新されています」が出続ける。
+    if ($file === 'ping') {
+        $data['contract_version'] = hb_support_contract_version();
+    }
+
+    return $data;
 }
 
 /**

@@ -13,6 +13,7 @@
   "completed_at": null,
   "spot_amount": null,
   "assignee_name": "山田 太郎",
+  "unread_count": 1,
   "allowed_actions": ["withdraw"],
   "messages": {
     "items": [

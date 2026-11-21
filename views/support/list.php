@@ -46,12 +46,7 @@ $tabs  = ['open' => '対応中', 'closed' => '完了・取消', 'all' => 'すべ
                 <td>
                     <strong>
                         <a href="<?php echo esc_url(add_query_arg(
-                            array_filter([
-                                'page'   => 'hb-support',
-                                'ticket' => (string) $item['id'],
-                                // 既読にしてよいかの手がかり（詳細の応答に未読数が無いため）
-                                'unread' => $unread > 0 ? '1' : null,
-                            ]),
+                            ['page' => 'hb-support', 'ticket' => (string) $item['id']],
                             admin_url('admin.php')
                         )); ?>"><?php echo esc_html((string) ($item['title'] ?? '')); ?></a>
                     </strong>

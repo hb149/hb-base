@@ -961,6 +961,8 @@ function hb_admin_screen_support(): void
 
     echo '<p>やり取りの実体は社内Appのチケット。この画面はその窓口の状態を見るところです。</p>';
 
+    hb_admin_screen_support_contract();
+
     echo '<table class="form-table" role="presentation"><tbody>';
 
     hb_admin_screen_row(
@@ -1009,6 +1011,53 @@ function hb_admin_screen_support(): void
     echo '</p>';
 
     hb_admin_screen_support_errors();
+}
+
+/**
+ * 契約の版が合っているか。
+ *
+ * 自分のファイル同士を突き合わせても「丸ごと古い」は見つからない
+ * （古い物同士で整合してしまう）。アプリが ping で名乗る版と手元を比べる。
+ *
+ * ずれていても**画面は止めない**。客の窓口なので、形が古いだけで使えなくしない。
+ */
+function hb_admin_screen_support_contract(): void
+{
+    $mine   = hb_support_contract_version();
+    $theirs = hb_support_remote_version();
+
+    if ($mine === '') {
+        echo '<div class="notice notice-warning inline"><p>'
+            . '<code>docs/hb-support/contract.version</code> がありません。契約の取り込みが不完全です。'
+            . '</p></div>';
+
+        return;
+    }
+
+    if ($theirs === '') {
+        printf(
+            '<p class="description">契約の版 <code>%s</code>（アプリ側の版は未取得。接続テストを押すと照合します）</p>',
+            esc_html($mine)
+        );
+
+        return;
+    }
+
+    if ($mine === $theirs) {
+        printf('<p class="description">契約の版 <code>%s</code>（アプリ側と一致）</p>', esc_html($mine));
+
+        return;
+    }
+
+    printf(
+        '<div class="notice notice-error inline"><p><strong>契約が更新されています（取り込み待ち）。</strong><br>'
+        . '手元 <code>%s</code> ／ アプリ側 <code>%s</code><br>'
+        . 'アプリ側の <code>app/docs/wp-support/</code> から <code>fixtures/</code>・'
+        . '<code>contract.sha256</code>・<code>contract.version</code> を取り直してください。'
+        . 'サポート画面は動きますが、応答の形が変わっている可能性があります。</p></div>',
+        esc_html($mine),
+        esc_html($theirs)
+    );
 }
 
 /** エラー10種が、それぞれどう見えるか。 */
