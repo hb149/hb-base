@@ -2,6 +2,7 @@
 
 WordPress案件で共通して使う土台。1つのリポジトリを直せば、入れている全サイトに更新が配れる。
 
+- **ログインURLの統一** — `wp-login.php` を隠し、全案件で同じ入口にそろえる
 - **ログイン画面の整形** — 並びと幅だけ整える（色と角丸は WordPress の既定のまま）
 - **パスキーの日本語化** — Secure Passkeys の画面文言を日本語にする
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
@@ -80,6 +81,11 @@ define('HB_TURNSTILE_SECRET_KEY', '0x4AAA...');
 // 出すフォーム（既定 login, lostpassword, register）
 define('HB_TURNSTILE_FORMS', 'login, lostpassword');
 
+/* ---- ログインURL ---- */
+
+// 未設定なら wp-login.php のまま。https://example.com/office/ がログイン画面になる
+define('HB_LOGIN_SLUG', 'office');
+
 /* ---- ログイン画面 ---- */
 
 // 既定では色も角丸も変えない。ブランドに寄せたい案件だけ書く
@@ -99,7 +105,7 @@ define('HB_LLAR_MANAGE', false);       // 初期値の投入ごと止める
 /* ---- 共通 ---- */
 
 // 動かすモジュールを絞る（既定は全部）
-define('HB_BASE_MODULES', 'passkey_ja, acfe_ja, login_ui, limit_login, turnstile, admin_guard');
+define('HB_BASE_MODULES', 'passkey_ja, acfe_ja, login_url, login_ui, limit_login, turnstile, admin_guard');
 ```
 
 ローカル検証には Cloudflare 公式の「常に成功する」テストキーが使える。
@@ -125,6 +131,7 @@ IP許可リストは、事務所など固定回線がある場合の補助。
 3. 緊急解除キー付きで開いた
 
 守る範囲は `/wp-admin/` と `wp-login.php` だけ。公開ページには一切影響しない。
+`HB_LOGIN_SLUG` でログインURLを変えている場合は、そちらも守る対象になる。
 `admin-ajax.php` と `admin-post.php` は、公開側のAJAXや問い合わせフォームが
 通る入口なので対象外にしている。
 
@@ -175,6 +182,29 @@ Cookieも置かないので同意取得の話にならない。
 
 Cloudflare に問い合わせできなかったときは、本番は止め、ローカルは通す。
 `HB_TURNSTILE_FAIL_OPEN` で上書きできる。
+
+---
+
+## ログインURL
+
+`HB_LOGIN_SLUG` を書くと、ログイン画面が `https://example.com/<slug>/` に移る。
+
+| | |
+|---|---|
+| 新しいURL | ログイン画面を出す |
+| `wp-login.php` | 404（リダイレクトしない。したら移転先を教えることになる） |
+| 未ログインで `/wp-admin/` | 404（同上） |
+| `admin-ajax.php` / `admin-post.php` | そのまま通す（公開側のAJAXや問い合わせフォームの入口） |
+| `wp-login.php?action=postpass` | そのまま通す（パスワード保護記事のフォーム送信先） |
+
+生成されるURL（ログアウト、パスワード再発行、再発行メールのリンク）は
+すべて新しいURLに書き換わる。`site_url` を1か所で差し替えているため。
+
+**これは目隠しであって防御ではない。** URLを変えただけでは、入口を知っている
+相手には何の意味もない。本当の防御は管理画面ガードと試行回数制限のほう。
+雑な自動攻撃を減らすのと、案件間で入口をそろえるための仕掛けと考えること。
+
+締め出されたら `wp-config.php` の `HB_LOGIN_SLUG` を消せば `wp-login.php` に戻る。
 
 ---
 
@@ -256,6 +286,7 @@ src/turnstile.php    Cloudflare Turnstile
 src/passkey-ja.php   Secure Passkeys の日本語化
 src/passkey-admin.php Secure Passkeys の管理画面に見出しを足す
 src/acfe-ja.php      ACF Extended の日本語化
+src/login-url.php    ログインURLの差し替え
 src/login-ui.php     ログイン画面の整形
 src/limit-login.php  Limit Login Attempts の初期設定
 src/updater.php      GitHub Releases からの自動更新

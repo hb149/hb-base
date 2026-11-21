@@ -39,6 +39,7 @@ require_once __DIR__ . '/src/ip.php';
 require_once __DIR__ . '/src/device.php';
 require_once __DIR__ . '/src/admin-guard.php';
 require_once __DIR__ . '/src/turnstile.php';
+require_once __DIR__ . '/src/login-url.php';
 require_once __DIR__ . '/src/login-ui.php';
 require_once __DIR__ . '/src/limit-login.php';
 require_once __DIR__ . '/src/passkey-ja.php';
@@ -66,6 +67,11 @@ add_action('plugins_loaded', 'hb_base_boot', 1);
 
 function hb_base_boot(): void
 {
+    // ログインURLの差し替えが最初。ここで行き先が決まるので、
+    // 管理画面ガードより先に判断を済ませておく必要がある。
+    if (hb_base_module_enabled('login_url')) {
+        hb_login_url_init();
+    }
     if (hb_base_module_enabled('passkey_ja')) {
         hb_passkey_ja_init();
         if (is_admin()) {
