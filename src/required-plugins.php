@@ -373,6 +373,10 @@ function hb_required_plugins_auto_install_init(): void
 /** 足りないものがあれば、裏での導入を予約する。 */
 function hb_required_plugins_schedule(): void
 {
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+
     if (wp_next_scheduled(HB_INSTALL_HOOK)) {
         return;
     }

@@ -87,6 +87,10 @@ function hb_admin_notices_flags(): array
  */
 function hb_admin_notices_seed(): void
 {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
     if (get_option(HB_NOTICE_MARKER)) {
         return;
     }

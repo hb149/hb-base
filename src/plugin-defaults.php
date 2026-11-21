@@ -47,6 +47,10 @@ function hb_plugin_defaults_target_post_types(): array
 
 function hb_plugin_defaults_seed(): void
 {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
     if (get_option(HB_DEFAULTS_MARKER)) {
         return;
     }

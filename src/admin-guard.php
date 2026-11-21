@@ -29,6 +29,15 @@ function hb_admin_guard_init(): void
     }
 
     hb_guard_check();
+
+    // admin-ajax.php と admin-post.php は、plugins_loaded の時点では
+    // まだ処理の登録が出そろっていない。どちらも admin_init を撃つので、
+    // そこでもう一度見る。
+    $file = basename(hb_guard_request_path());
+
+    if (in_array($file, ['admin-ajax.php', 'admin-post.php'], true)) {
+        add_action('admin_init', 'hb_guard_check', 0);
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -37,6 +46,16 @@ function hb_admin_guard_init(): void
 
 function hb_guard_check(): void
 {
+    // admin-ajax などでは plugins_loaded と admin_init の2回呼ぶので、
+    // 判定も記録も1回に抑える。
+    static $done = false;
+
+    if ($done) {
+        return;
+    }
+
+    $done = true;
+
     if (hb_guard_is_exempt()) {
         return;
     }
@@ -119,10 +138,14 @@ function hb_guard_path_is_login(string $path): bool
 /**
  * 守る対象から外すもの。
  *
- * admin-ajax.php と admin-post.php は公開側からも叩かれる入口なので外す。
- * ここを塞ぐとフロントのAJAXや問い合わせフォームが巻き添えで壊れる。
- * （この2つはログイン不要の処理しか受けない設計になっているので、
- *   管理面を守るという目的からは外して問題ない）
+ * admin-ajax.php と admin-post.php は公開側からも叩かれる入口なので、
+ * 丸ごと塞ぐとフロントのAJAXや問い合わせフォームが巻き添えで壊れる。
+ * ただし丸ごと通すと、ログイン利用者向けの処理までガードの外側になる。
+ *
+ * そこで「公開向けの処理か」で分ける。WordPress は入口を
+ *   wp_ajax_nopriv_{action}  … 未ログインでも実行する
+ *   wp_ajax_{action}         … ログイン利用者向け
+ * と分けて登録するので、これを見れば判断できる（admin-post も同じ）。
  */
 function hb_guard_is_exempt(): bool
 {
@@ -134,21 +157,22 @@ function hb_guard_is_exempt(): bool
         return true;
     }
 
-    if (defined('DOING_AJAX') && DOING_AJAX) {
-        return true;
-    }
+    // DOING_AJAX で一律に通さないこと。
+    // admin-ajax.php は公開向けと管理向けの両方を受けるので、下で処理ごとに分ける。
 
     $file = basename(hb_guard_request_path());
 
-    $exemptFiles = [
-        'admin-ajax.php',
-        'admin-post.php',
-        'load-scripts.php',
-        'load-styles.php',
-    ];
-
-    if (in_array($file, $exemptFiles, true)) {
+    // 画面を組み立てるための静的配信。中身はJSとCSSだけ。
+    if (in_array($file, ['load-scripts.php', 'load-styles.php'], true)) {
         return true;
+    }
+
+    if ($file === 'admin-ajax.php') {
+        return hb_guard_is_public_entry('wp_ajax_nopriv_');
+    }
+
+    if ($file === 'admin-post.php') {
+        return hb_guard_is_public_entry('admin_post_nopriv_');
     }
 
     // 公開ページの「パスワード保護記事」はwp-login.phpにPOSTする。止めると閲覧者に影響が出る。
@@ -159,6 +183,30 @@ function hb_guard_is_exempt(): bool
     }
 
     return (bool) apply_filters('hb_admin_guard_exempt', false);
+}
+
+/**
+ * この要求は「公開向けの処理」か。
+ *
+ * 未ログイン向けの登録がある処理だけ素通りさせる。
+ * ログイン利用者向けしか登録が無い処理は、管理面の一部としてガードにかける。
+ *
+ * 登録は plugins_loaded 以降に出そろうので、判定もそこまで待つ。
+ * （ガード本体は plugins_loaded の最初に動くため、ここで確定できないものは
+ *   いったん通し、改めて admin_init で見直す）
+ *
+ * @param string $prefix 未ログイン向けフックの接頭辞
+ */
+function hb_guard_is_public_entry(string $prefix): bool
+{
+    $action = isset($_REQUEST['action']) ? sanitize_key(wp_unslash((string) $_REQUEST['action'])) : '';
+
+    if ($action === '') {
+        // 何の処理か分からないものは、管理面として扱う。
+        return false;
+    }
+
+    return has_action($prefix . $action) !== false;
 }
 
 /* ---------------------------------------------------------------------------

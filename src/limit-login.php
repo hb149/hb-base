@@ -101,6 +101,10 @@ function hb_limit_login_show_for_maintainer($pre, $option = '')
  */
 function hb_limit_login_seed(): void
 {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
     if (get_option(HB_LLAR_MARKER)) {
         return;
     }

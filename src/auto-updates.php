@@ -88,6 +88,11 @@ function hb_auto_updates_core(): void
  */
 function hb_auto_updates_seed(): void
 {
+    // 設定を書き込む処理なので、管理者が見ているときだけ動かす。
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
     if (get_option(HB_AUTOUPDATE_MARKER)) {
         return;
     }

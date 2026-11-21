@@ -15,9 +15,15 @@
  *   未ログインでも、投稿のあるユーザーの slug（＝ログイン名）を返す。
  *   著者ページを404にしても、こちらが開いていれば同じことが調べられる。
  *
+ * ■ アプリケーションパスワード
+ *   REST や XML-RPC 用の別パスワード。これで認証されると、
+ *   パスキーも人間確認も試行回数制限も**全部迂回される**。
+ *   外部連携を実際に使っている案件以外では持っていても損しかない。
+ *
  * 必要な案件だけ元に戻す:
- *   define('HB_XMLRPC', true);      // XML-RPCを使う
- *   define('HB_REST_USERS', true);  // ユーザー一覧を未ログインにも見せる
+ *   define('HB_XMLRPC', true);          // XML-RPCを使う
+ *   define('HB_REST_USERS', true);      // ユーザー一覧を未ログインにも見せる
+ *   define('HB_APP_PASSWORDS', true);   // アプリケーションパスワードを使う
  */
 
 if (!defined('ABSPATH')) {
@@ -32,6 +38,11 @@ function hb_hardening_init(): void
 
     if (!hb_base_const('HB_REST_USERS', false)) {
         add_filter('rest_endpoints', 'hb_hardening_hide_rest_users');
+    }
+
+    if (!hb_base_const('HB_APP_PASSWORDS', false)) {
+        // 発行済みのものも含めて認証に使えなくなり、プロフィール画面からも消える。
+        add_filter('wp_is_application_passwords_available', '__return_false');
     }
 }
 
@@ -114,6 +125,10 @@ function hb_hardening_summary(): string
     $items[] = hb_base_const('HB_REST_USERS', false)
         ? 'RESTのユーザー一覧: <strong>公開</strong>'
         : 'RESTのユーザー一覧: 未ログインには出さない';
+
+    $items[] = hb_base_const('HB_APP_PASSWORDS', false)
+        ? 'アプリケーションパスワード: <strong>有効</strong>'
+        : 'アプリケーションパスワード: 停止';
 
     $items[] = hb_base_const('HB_AUTHOR_ARCHIVES', false)
         ? '著者ページ: <strong>公開</strong>'
