@@ -41,6 +41,7 @@ require_once __DIR__ . '/src/admin-guard.php';
 require_once __DIR__ . '/src/turnstile.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
+require_once __DIR__ . '/src/passkey-admin.php';
 require_once __DIR__ . '/src/updater.php';
 require_once __DIR__ . '/src/admin-screen.php';
 
@@ -65,6 +66,9 @@ function hb_base_boot(): void
 {
     if (hb_base_module_enabled('passkey_ja')) {
         hb_passkey_ja_init();
+        if (is_admin()) {
+            hb_passkey_admin_init();
+        }
     }
     if (hb_base_module_enabled('acfe_ja')) {
         hb_acfe_ja_init();
