@@ -39,6 +39,8 @@ function hb_admin_screen_script(string $hook): void
         return;
     }
 
+    hb_admin_screen_borrow_ui();
+
     wp_register_script('hb-admin-screen', false, [], HB_BASE_VERSION, true);
     wp_enqueue_script('hb-admin-screen');
 
@@ -51,6 +53,26 @@ function hb_admin_screen_script(string $hook): void
         'hb-admin-screen',
         '(' . hb_admin_screen_js() . ')(' . wp_json_encode($data) . ');'
     );
+}
+
+/**
+ * サイト側が管理画面の設定ページに手を入れている場合、その部品を借りる。
+ *
+ * ACF Extended はコアの設定画面だけに自分のUIを当てている。
+ * こちらの画面には来ないので、同じ見た目にならない。
+ * 真似たCSSを書くのではなく、向こうが登録している部品をそのまま読み込む。
+ *
+ * 入っていないサイトでは何も起きない（登録が無ければ WordPress が無視する）。
+ * 向こうが名前を変えたら、ただ効かなくなるだけで壊れない。
+ */
+function hb_admin_screen_borrow_ui(): void
+{
+    if (!wp_style_is('acf-extended-ui', 'registered')) {
+        return;
+    }
+
+    wp_enqueue_style('acf-extended-ui');
+    wp_enqueue_script('acf-extended-ui');
 }
 
 function hb_admin_screen_js(): string
@@ -430,16 +452,16 @@ function hb_admin_screen_render(): void
 }
 
 /**
- * 節を1枚のカードにする。
+ * 節の見出しと中身。
  *
- * WordPress の postbox のマークアップをそのまま使う。コア自身も
- * プロフィール画面の「アプリケーションパスワード」で同じ書き方をしている
- * （wp-admin/user-edit.php）。
+ * <h2> ＋ <table class="form-table"> という、WordPressの設定画面と同じ並べ方にする。
+ * カードの枠や区切り線は、サイト側が管理画面に当てているスタイルが面倒を見る
+ * （この案件では ACF Extended。hb_admin_screen_borrow_ui() で読み込んでいる）。
  *
- * add_meta_box() は使わない。折りたたみの矢印や「表示オプション」が付いて、
- * 他の設定画面と見た目が変わってしまうため。
+ * 自前で postbox の入れ物を作らない。向こうのスタイルと二重になり、
+ * 見出しがタブのように見えるなどの食い違いが出る。
  *
- * 中身が何も出ない節はカードごと出さない。
+ * 中身が何も出ない節は見出しごと出さない。
  */
 function hb_admin_screen_section(string $title, callable $render): void
 {
@@ -451,11 +473,9 @@ function hb_admin_screen_section(string $title, callable $render): void
         return;
     }
 
-    printf(
-        '<div class="postbox"><div class="postbox-header"><h2>%s</h2></div><div class="inside">%s</div></div>',
-        esc_html($title),
-        $inside // 各描画関数でエスケープ済み
-    );
+    printf('<h2>%s</h2>', esc_html($title));
+
+    echo $inside; // 各描画関数でエスケープ済み
 }
 
 /* --- 状態 ------------------------------------------------------------- */
