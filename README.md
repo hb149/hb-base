@@ -8,6 +8,7 @@ WordPress案件で共通して使う土台。1つのリポジトリを直せば�
 - **Cloudflare Turnstile** — ログイン・パスワード再発行・ユーザー登録に人間確認を足す
 - **自動更新を最初から有効化** — WordPress本体・プラグイン・テーマ
 - **標準プラグインのまとめ導入** — 案件ごとに手で入れて回らない
+- **保守サポート** — 社内Appのチケットを管理画面から読み書きする窓口
 - **気づける仕組み** — 管理者が増えた・見慣れない端末からログインされた、を保守担当へ
 - **クライアント向けの整理** — ファイル編集を無効化し、触らせたくない項目を隠す
 - **横道の遮断** — XML-RPC と REST のユーザー一覧を塞ぐ
@@ -122,6 +123,13 @@ define('HB_LOCK_REQUIRED_PLUGINS', false); // 「停止」リンクを隠さな�
 
 // ローカルの受け止め先（Mailpit など）。local 環境でのみ有効
 define('HB_MAIL_CATCHER', 'mail:1025');
+
+/* ---- 保守サポート（社内App連携） ---- */
+
+define('HB_SUPPORT_URL',    'https://app.example.com'); // 末尾スラッシュ無し
+define('HB_SUPPORT_TOKEN',  'wps_...');                 // サイトごとに違う
+define('HB_SUPPORT_SECRET', 'whsec_...');               // Webhook検証用（使うまで空でよい）
+define('HB_SUPPORT_MOCK',   true);                      // アプリ未実装のあいだフィクスチャで動かす
 
 /* ---- 通知とクライアント向けの整理 ---- */
 
@@ -419,6 +427,42 @@ Docker の WordPress 公式イメージには sendmail が入っていない。�
 
 ---
 
+## 保守サポート
+
+社内App（hb-documents）の保守チケットを、クライアントが管理画面から読み書きするための窓口。
+**WordPress 側はデータを持たない**（サイトが増えても情報が分散しないため）。
+
+| | |
+|---|---|
+| 仕様の正本 | `hb-documents/app/docs/wp-support-api-design.md` |
+| 応答の形の正本 | `docs/hb-support/fixtures/`（コピー。こちらでは直さない） |
+| 往復ノート | `hb-documents/app/docs/wp-support/qa.md` |
+
+**仕様の穴に気づいても実装で埋めない。** qa.md に書く（埋めた物は相手に見えない）。
+
+設定の3定数が未設定なら、このモジュールは何もしない（メニューも出ない）。
+`HB_SUPPORT_MOCK` を立てると `docs/hb-support/fixtures/` を応答として使うので、
+アプリ側の API が無くても画面を作れる。
+
+### 決まりごと（アプリ側と合意済み）
+
+- 状態は WP から直接書かない。客の操作は `approve` / `accept` / `withdraw` の3つだけ
+- ボタンは `features`（サイト全体）と `allowed_actions`（この1件）の**両方**で絞る
+- `features` は ping が取れた時だけ更新。取れない時は前回値、無ければ全部可
+  （通信が落ちただけでメニューが消えると「機能が無くなった」に見える）
+- 本文は平文のみ。`esc_html()` + `nl2br()` で出す（HTMLを受けるとXSSの責任が2箇所に分かれる）
+- メールは WP から出さない（アプリ側が出す＝二重にならない）
+- 401・403・404・409・400・413 以外は理由を見せず「いま接続できません」だけ
+- Webhook の受け口は `permission_callback` を署名検証にする
+- タイムアウトは画面10秒 / 巡回15秒、`sslverify = true`
+
+### 検査
+
+設定 → HBベース → サポート連携 に、未読とエラー10種の出し分けが並ぶ。
+一覧と詳細はサポート画面そのもので確認する。
+
+---
+
 ## 気づける仕組み
 
 防ぐ仕掛けを入れても、抜けられたときに気づけないと意味がない。
@@ -684,6 +728,9 @@ src/mail.php             ローカルのメールの受け止め先
 src/hardening.php        XML-RPC・RESTユーザー一覧の遮断
 src/client-ui.php        ファイル編集の無効化・メニューの整理
 src/watch.php            管理者の増加・見慣れない端末の通知
+src/support.php          保守サポート（APIクライアント・巡回・Webhook）
+src/support-screen.php   保守サポートの管理画面
+views/support/           一覧・詳細のテンプレート
 src/updater.php      GitHub Releases からの自動更新
 src/admin-screen.php 設定 → HBベース
 views/blocked.php    遮断画面

@@ -53,6 +53,8 @@ require_once __DIR__ . '/src/mail.php';
 require_once __DIR__ . '/src/hardening.php';
 require_once __DIR__ . '/src/client-ui.php';
 require_once __DIR__ . '/src/watch.php';
+require_once __DIR__ . '/src/support.php';
+require_once __DIR__ . '/src/support-screen.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -130,6 +132,13 @@ function hb_base_boot(): void
     }
     if (hb_base_module_enabled('watch')) {
         hb_watch_init();
+    }
+    if (hb_base_module_enabled('support')) {
+        hb_support_init();
+
+        if (is_admin()) {
+            hb_support_screen_init();
+        }
     }
     if (is_admin()) {
         hb_admin_screen_init();

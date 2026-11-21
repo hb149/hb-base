@@ -377,6 +377,19 @@ function hb_admin_screen_do_action(string $action): string
             }
             break;
 
+        case 'support-ping':
+            $ping   = hb_support_refresh_features();
+            $notice = is_wp_error($ping) ? 'support-ng' : 'support-ok';
+            if (is_wp_error($ping)) {
+                set_transient('hb_plugin_error_' . get_current_user_id(), hb_support_message($ping), 60);
+            }
+            break;
+
+        case 'support-poll':
+            hb_support_poll_unread();
+            $notice = 'support-polled';
+            break;
+
         case 'clear-log':
             delete_option(HB_GUARD_LOG_OPTION);
             $notice = 'log-cleared';
@@ -415,6 +428,10 @@ function hb_admin_screen_tabs(): array
 
     if (current_user_can('install_plugins')) {
         $tabs['plugins'] = ['標準プラグイン', 'hb_admin_screen_plugins'];
+    }
+
+    if (function_exists('hb_support_configured') && hb_support_configured()) {
+        $tabs['support'] = ['サポート連携', 'hb_admin_screen_support'];
     }
 
     $log = get_option(HB_GUARD_LOG_OPTION, []);
@@ -924,6 +941,114 @@ function hb_admin_screen_plugin_row(string $slug, array $info): string
     echo '</td></tr>';
 
     return (string) ob_get_clean();
+}
+
+/* --- サポート連携 --- */
+
+/**
+ * 連携の状態と、応答の形に追従できているかの確認。
+ *
+ * 契約（docs/hb-support/CONTRACT.md）で WP 側に求められている検査は
+ * 「フィクスチャを食わせて一覧・詳細・未読・エラー10種を描けるか」。
+ * 一覧と詳細はサポート画面そのもので確認できるので、ここでは
+ * 残りの未読とエラーの出し分けを並べる。
+ */
+function hb_admin_screen_support(): void
+{
+    $saved    = get_option(HB_SUPPORT_FEATURES_OPTION);
+    $features = hb_support_features();
+    $unread   = hb_support_unread();
+
+    echo '<p>やり取りの実体は社内Appのチケット。この画面はその窓口の状態を見るところです。</p>';
+
+    echo '<table class="form-table" role="presentation"><tbody>';
+
+    hb_admin_screen_row(
+        '接続先',
+        hb_support_mock()
+            ? '<strong>モック</strong><p class="description">アプリ側が未実装のあいだ、'
+                . '<code>docs/hb-support/fixtures/</code> を応答として使っています。</p>'
+            : '<code>' . esc_html(hb_support_url()) . '</code>'
+    );
+
+    hb_admin_screen_row(
+        'サイト',
+        is_array($saved) && !empty($saved['site']['name'])
+            ? esc_html((string) $saved['site']['name']) . ' <code>' . esc_html((string) ($saved['site']['id'] ?? '')) . '</code>'
+            : '<span class="description">未取得（接続テストを押してください）</span>'
+    );
+
+    $labels = [];
+
+    foreach ($features as $key => $on) {
+        $labels[] = sprintf('%s: %s', esc_html($key), $on ? '可' : '<strong>不可</strong>');
+    }
+
+    hb_admin_screen_row('出せる機能', implode(' ・ ', $labels)
+        . (is_array($saved) && !empty($saved['at'])
+            ? '<p class="description">' . esc_html(wp_date('Y-m-d H:i', (int) $saved['at'])) . ' 時点</p>'
+            : '<p class="description">未取得のため全部「可」で扱っています（通信が落ちただけで機能を消さないため）。</p>'));
+
+    hb_admin_screen_row(
+        '未読',
+        empty($unread)
+            ? '<span class="description">未取得</span>'
+            : sprintf(
+                '未読 %d件 ・ 対応中 %d件 ・ 要対応 %d件',
+                (int) ($unread['unread_total'] ?? 0),
+                (int) ($unread['open_total'] ?? 0),
+                (int) ($unread['action_required'] ?? 0)
+            )
+    );
+
+    echo '</tbody></table>';
+
+    echo '<p class="submit">';
+    echo '<button type="submit" name="hb_action" value="support-ping" class="button">接続テスト</button> ';
+    echo '<button type="submit" name="hb_action" value="support-poll" class="button">未読を取り直す</button>';
+    echo '</p>';
+
+    hb_admin_screen_support_errors();
+}
+
+/** エラー10種が、それぞれどう見えるか。 */
+function hb_admin_screen_support_errors(): void
+{
+    $fixtures = hb_support_error_fixtures();
+
+    if (empty($fixtures)) {
+        return;
+    }
+
+    echo '<h3>エラーの出し分け</h3>';
+    echo '<p>アプリ側が返す10種が、画面でどう見えるかの一覧です。'
+        . '<strong>401・403・404・409・400・413 以外は理由を見せず「いま接続できません」だけ</strong>にしています'
+        . '（アプリ側の不具合やデプロイ中の事情を客に見せても何もできないため）。</p>';
+
+    echo '<table class="wp-list-table widefat striped"><thead><tr>';
+    echo '<th scope="col">HTTP</th><th scope="col">code</th><th scope="col">画面に出る文面</th>';
+    echo '</tr></thead><tbody>';
+
+    foreach ($fixtures as $http => $spec) {
+        if (!is_array($spec)) {
+            continue;
+        }
+
+        $error = new WP_Error(
+            (string) ($spec['code'] ?? ''),
+            (string) ($spec['error'] ?? ''),
+            ['status' => (int) $http, 'body' => $spec]
+        );
+
+        printf(
+            '<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>',
+            esc_html((string) $http),
+            esc_html((string) ($spec['code'] ?? '')),
+            esc_html(hb_support_message($error))
+        );
+    }
+
+    echo '</tbody></table>';
 }
 
 /* --- 遮断の記録 --------------------------------------------------------- */
