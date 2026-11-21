@@ -47,6 +47,7 @@ require_once __DIR__ . '/src/admin-notices.php';
 require_once __DIR__ . '/src/required-plugins.php';
 require_once __DIR__ . '/src/plugin-defaults.php';
 require_once __DIR__ . '/src/auto-updates.php';
+require_once __DIR__ . '/src/plugin-labels.php';
 require_once __DIR__ . '/src/passkey-ja.php';
 require_once __DIR__ . '/src/acfe-ja.php';
 require_once __DIR__ . '/src/passkey-admin.php';
@@ -106,6 +107,9 @@ function hb_base_boot(): void
     }
     if (hb_base_module_enabled('auto_updates')) {
         hb_auto_updates_init();
+    }
+    if (hb_base_module_enabled('plugin_labels')) {
+        hb_plugin_labels_init();
     }
     if (is_admin()) {
         hb_admin_screen_init();
